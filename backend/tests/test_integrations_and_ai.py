@@ -1,0 +1,418 @@
+import pytest
+from rest_framework.exceptions import ValidationError
+from rest_framework.test import APIClient
+
+from apps.ai.models import (
+    AICallLog,
+    AICallStatus,
+    AIModelDecisionLog,
+    AIProvider,
+    AITaskProfile,
+    PromptTemplate,
+)
+from apps.ai.services import (
+    AIProviderNotConfigured,
+    run_ai_prompt,
+    run_ai_task,
+    select_ai_execution_plan,
+    validate_structured_output,
+)
+from apps.integrations.models import (
+    CredentialType,
+    IntegrationAccountStatus,
+    IntegrationProvider,
+    ProviderAuthType,
+    SyncLogStatus,
+)
+from apps.integrations.services import create_sync_log, decrypt_credential_payload
+from apps.organizations.models import Membership, MembershipRole, MembershipStatus
+from apps.organizations.services import create_organization_for_owner
+
+pytestmark = pytest.mark.django_db
+
+
+def make_user(django_user_model, email="user@example.com", password="SaaSCore!23456", **extra):
+    return django_user_model.objects.create_user(email=email, password=password, **extra)
+
+
+def make_api_key_provider(slug="test-provider"):
+    return IntegrationProvider.objects.create(
+        name="Test Provider",
+        slug=slug,
+        category="test",
+        auth_type=ProviderAuthType.API_KEY,
+        scopes=["read"],
+    )
+
+
+def test_provider_registry_lists_active_providers(django_user_model):
+    make_user(django_user_model)
+    provider = make_api_key_provider()
+    client = APIClient()
+    client.force_authenticate(django_user_model.objects.get(email="user@example.com"))
+
+    response = client.get("/api/v1/integrations/providers/")
+
+    assert response.status_code == 200
+    assert response.json()[0]["slug"] == provider.slug
+
+
+def test_admin_can_connect_api_key_provider_and_secret_is_encrypted(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    provider = make_api_key_provider()
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        f"/api/v1/integrations/{provider.slug}/connect/",
+        {
+            "organization_id": organization.id,
+            "external_account_id": "external-123",
+            "display_name": "External Account",
+            "credential_type": CredentialType.API_KEY,
+            "credential_payload": {"api_key": "secret-api-key"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["has_credential"] is True
+    account = organization.integration_accounts.get(provider=provider)
+    assert account.status == IntegrationAccountStatus.CONNECTED
+    assert "secret-api-key" not in account.credential.encrypted_payload
+    assert decrypt_credential_payload(account.credential.encrypted_payload) == {
+        "api_key": "secret-api-key"
+    }
+
+
+def test_member_cannot_connect_integration_provider(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    member = make_user(django_user_model, email="member@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    Membership.objects.create(
+        organization=organization,
+        user=member,
+        role=MembershipRole.MEMBER,
+        status=MembershipStatus.ACTIVE,
+    )
+    provider = make_api_key_provider()
+    client = APIClient()
+    client.force_authenticate(member)
+
+    response = client.post(
+        f"/api/v1/integrations/{provider.slug}/connect/",
+        {
+            "organization_id": organization.id,
+            "credential_payload": {"api_key": "secret-api-key"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 403
+
+
+def test_oauth_provider_returns_descriptive_error_until_oauth_client_exists(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    provider = IntegrationProvider.objects.create(
+        name="OAuth Provider",
+        slug="oauth-provider",
+        category="test",
+        auth_type=ProviderAuthType.OAUTH2,
+        scopes=["read"],
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        f"/api/v1/integrations/{provider.slug}/connect/",
+        {"organization_id": organization.id},
+        format="json",
+    )
+
+    assert response.status_code == 503
+    assert "provider is not configured yet" in response.json()["detail"]
+
+
+def test_disconnect_and_sync_logs_are_org_scoped(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    provider = make_api_key_provider()
+    account = organization.integration_accounts.create(
+        provider=provider,
+        external_account_id="external-123",
+        display_name="External Account",
+        connected_by=owner,
+    )
+    create_sync_log(
+        integration_account=account,
+        action="manual_sync",
+        status=SyncLogStatus.SUCCEEDED,
+        external_request_id="req_123",
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    logs_response = client.get(f"/api/v1/integrations/{account.id}/sync-logs/")
+    disconnect_response = client.post(f"/api/v1/integrations/{account.id}/disconnect/")
+
+    assert logs_response.status_code == 200
+    assert logs_response.json()["results"][0]["external_request_id"] == "req_123"
+    assert disconnect_response.status_code == 200
+    account.refresh_from_db()
+    assert account.status == IntegrationAccountStatus.DISCONNECTED
+
+
+def test_default_ai_providers_are_available_and_not_configured_without_api_keys(django_user_model):
+    user = make_user(django_user_model, email="owner@example.com")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.get("/api/v1/ai/providers/")
+
+    assert response.status_code == 200
+    slugs = {provider["slug"] for provider in response.json()}
+    assert {"openai", "anthropic", "gemini"}.issubset(slugs)
+    openai_provider = next(provider for provider in response.json() if provider["slug"] == "openai")
+    assert openai_provider["configuration"]["status"] == "not_configured"
+
+
+def test_structured_output_validation_passes_and_fails():
+    schema = {
+        "type": "object",
+        "required": ["summary"],
+        "properties": {"summary": {"type": "string"}},
+    }
+
+    assert validate_structured_output({"summary": "ok"}, schema) is True
+
+    with pytest.raises(ValidationError):
+        validate_structured_output({"summary": 123}, schema)
+
+
+def test_ai_prompt_service_logs_failed_call_when_provider_key_is_missing(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    provider = AIProvider.objects.get(slug="openai")
+    PromptTemplate.objects.create(
+        key="generic-summary",
+        name="Generic Summary",
+        version=1,
+        system_prompt="Return structured JSON.",
+        user_prompt="Summarize {{input}}",
+        output_schema={
+            "type": "object",
+            "required": ["summary"],
+            "properties": {"summary": {"type": "string"}},
+        },
+    )
+
+    with pytest.raises(AIProviderNotConfigured):
+        run_ai_prompt(
+            organization=organization,
+            user=owner,
+            provider_slug=provider.slug,
+            prompt_key="generic-summary",
+            input_payload={"input": "hello"},
+        )
+
+    log = AICallLog.objects.get(organization=organization)
+    assert log.status == AICallStatus.FAILED
+    assert log.provider == provider
+    assert log.prompt_version == 1
+    assert "OPENAI_API_KEY" in log.error_message
+
+
+def test_ai_call_logs_are_organization_scoped(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    other = make_user(django_user_model, email="other@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    other_organization = create_organization_for_owner(other, "Other Workspace")
+    provider = AIProvider.objects.get(slug="openai")
+    prompt = PromptTemplate.objects.create(
+        key="generic-summary",
+        name="Generic Summary",
+        version=1,
+        user_prompt="Summarize {{input}}",
+    )
+    AICallLog.objects.create(
+        organization=organization,
+        user=owner,
+        provider=provider,
+        prompt_template=prompt,
+        prompt_version=1,
+        model="test-model",
+        status=AICallStatus.FAILED,
+        request_hash="a" * 64,
+    )
+    AICallLog.objects.create(
+        organization=other_organization,
+        user=other,
+        provider=provider,
+        prompt_template=prompt,
+        prompt_version=1,
+        model="test-model",
+        status=AICallStatus.FAILED,
+        request_hash="b" * 64,
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.get(f"/api/v1/ai/call-logs/?organization_id={organization.id}")
+
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    assert response.json()["results"][0]["request_hash"] == "a" * 64
+
+
+def test_default_ai_task_profiles_are_exposed(django_user_model):
+    user = make_user(django_user_model, email="owner@example.com")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.get("/api/v1/ai/task-profiles/")
+
+    assert response.status_code == 200
+    profile_keys = {profile["key"] for profile in response.json()["results"]}
+    assert {"recurring_ai_report", "table_analysis", "high_risk_advice"}.issubset(
+        profile_keys
+    )
+
+
+def test_execution_plan_prefers_deterministic_strategy_when_problem_allows_it(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        "/api/v1/ai/execution-plan/",
+        {
+            "organization_id": organization.id,
+            "task_key": "table_analysis",
+            "input_payload": {"columns": ["revenue", "month"], "rows": 12},
+            "constraints": {"can_solve_without_ai": True},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["strategy"] == "deterministic"
+    assert body["provider_slug"] == ""
+    assert body["configuration"]["status"] == "not_required"
+    assert AIModelDecisionLog.objects.filter(
+        organization=organization,
+        selected_strategy="deterministic",
+    ).exists()
+
+
+def test_execution_plan_uses_classic_ml_for_table_analysis_when_available(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+
+    execution_plan = select_ai_execution_plan(
+        organization=organization,
+        user=owner,
+        task_key="table_analysis",
+        input_payload={"metric": "churn", "rows": 5000},
+        constraints={"can_use_classic_ml": True},
+    )
+
+    assert execution_plan["strategy"] == "classic_ml"
+    assert execution_plan["provider_slug"] == ""
+    assert execution_plan["fallback"]["strategy"] == "low_cost_llm"
+    assert execution_plan["reason"] == "Task can be solved by classic ML/DL libraries."
+
+
+def test_execution_plan_uses_low_cost_llm_for_recurring_report_narrative(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+
+    execution_plan = select_ai_execution_plan(
+        organization=organization,
+        user=owner,
+        task_key="recurring_ai_report",
+        input_payload={"facts": {"revenue": 1000, "trend": "up"}},
+        constraints={},
+    )
+
+    assert execution_plan["strategy"] == "low_cost_llm"
+    assert execution_plan["provider_slug"] == "openai"
+    assert execution_plan["configuration"]["status"] == "not_configured"
+    assert "OPENAI_API_KEY" in execution_plan["configuration"]["detail"]
+
+
+def test_high_risk_execution_plan_requires_human_review(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+
+    execution_plan = select_ai_execution_plan(
+        organization=organization,
+        user=owner,
+        task_key="high_risk_advice",
+        input_payload={"case": "sensitive"},
+        constraints={"risk_level": "high"},
+    )
+
+    assert execution_plan["strategy"] == "human_review"
+    assert execution_plan["requires_human_review"] is True
+    assert execution_plan["provider_slug"] == ""
+
+
+def test_run_ai_task_returns_product_executor_instruction_for_non_llm_strategy(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    PromptTemplate.objects.create(
+        key="table-summary",
+        name="Table Summary",
+        version=1,
+        user_prompt="Summarize {{input}}",
+    )
+
+    result = run_ai_task(
+        organization=organization,
+        user=owner,
+        task_key="table_analysis",
+        prompt_key="table-summary",
+        input_payload={"rows": 12},
+        constraints={"can_solve_without_ai": True},
+    )
+
+    assert result["status"] == "selected"
+    assert result["execution_plan"]["strategy"] == "deterministic"
+    assert "product-specific" in result["detail"]
+
+
+def test_ai_decision_logs_are_organization_scoped(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    other = make_user(django_user_model, email="other@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    other_organization = create_organization_for_owner(other, "Other Workspace")
+    profile = AITaskProfile.objects.get(key="table_analysis")
+    AIModelDecisionLog.objects.create(
+        organization=organization,
+        user=owner,
+        task_profile=profile,
+        task_key=profile.key,
+        selected_strategy="classic_ml",
+        decision_reason="test",
+    )
+    AIModelDecisionLog.objects.create(
+        organization=other_organization,
+        user=other,
+        task_profile=profile,
+        task_key=profile.key,
+        selected_strategy="classic_ml",
+        decision_reason="test",
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.get(f"/api/v1/ai/decision-logs/?organization_id={organization.id}")
+
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    assert response.json()["results"][0]["organization"] == organization.id

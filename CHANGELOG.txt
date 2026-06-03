@@ -1,0 +1,833 @@
+SaaS Core Template Changelog
+============================
+
+Purpose
+-------
+This file tracks the template evolution phase by phase.
+
+Rules:
+- Update this file at the end of every implementation phase.
+- Keep entries factual: what changed, what was verified, and what remains external/not configured.
+- Do not record secrets, API keys, credentials, real customer data, or private provider details.
+- Keep product-specific work out of this changelog unless it affects the reusable template.
+
+
+2026-06-03 - Specification Update
+---------------------------------
+Changed:
+- Updated the Word specification document with the SaaS factory operating model.
+- Added standard product delivery workflow guidance.
+- Added recommended technology/API strategy.
+- Added AWS and Docker operating standard.
+- Added pragmatic TDD and lightweight workflow testing methodology.
+- Added standard operational checklist for each SaaS product.
+
+Files:
+- SaaS_Core_Template_Requirements_and_Design_for_Codex.docx
+- SaaS_Core_Template_Requirements_and_Design_for_Codex.before-conversation-update.docx
+
+Notes:
+- The backup document preserves the version before the conversation-driven updates.
+
+
+2026-06-03 - Specification Update: AI Cost Ladder
+-------------------------------------------------
+Changed:
+- Updated the Word specification document with the AI Cost Ladder and model selection hierarchy.
+- Added the rule that each SaaS should first check whether the problem can be solved without AI.
+- Added the preferred escalation path:
+  deterministic code/rules,
+  classic algorithms and ML/DL libraries,
+  optional local small models,
+  low-cost LLMs,
+  mid-tier LLMs,
+  advanced LLMs,
+  human review for high-risk cases.
+- Added product-level model selection workflow guidance.
+- Added examples for reporting, churn/forecasting, document extraction, and support assistants.
+- Added template implementation implications for AI decision profiles, logs, cost controls, and reusable strategy interfaces.
+- Renumbered the later specification sections so AWS is now section 25, Testing is section 26, and Operational Checklist is section 27.
+
+Files:
+- SaaS_Core_Template_Requirements_and_Design_for_Codex.docx
+- SaaS_Core_Template_Requirements_and_Design_for_Codex.before-ai-cost-ladder-update.docx
+- CHANGELOG.txt
+
+Notes:
+- The backup document preserves the version before the AI Cost Ladder update.
+
+
+2026-06-03 - Phase 1: Repository Scaffold
+-----------------------------------------
+Changed:
+- Created the initial repository structure:
+  backend/
+  frontend/
+  docs/
+  deploy/
+  postman/
+  .github/
+- Added root README, .gitignore, .editorconfig, and environment examples.
+- Added Django backend baseline with settings split for local/test/production.
+- Added DRF, OpenAPI/Swagger/Redoc, Celery config, health endpoint, and backend test setup.
+- Added React + TypeScript + Vite frontend baseline.
+- Added frontend lint, typecheck, unit test, Playwright smoke test, and build configuration.
+- Added Dockerfiles and Docker Compose for local backend/frontend/PostgreSQL/Redis/Celery.
+- Added CI workflow skeleton for backend and frontend checks.
+- Added initial Postman collection and local environment.
+- Added docs for architecture, API conventions, deployment, product patterns, security, testing, and creating a new SaaS from the template.
+
+Verification:
+- Backend dependency dry-run resolved.
+- Backend virtualenv install succeeded.
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend pytest passed.
+- Frontend npm install succeeded with zero reported vulnerabilities.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+- Playwright e2e was attempted but could not run because the local Playwright
+  Chromium executable is not installed.
+- Docker Compose and CI YAML parsed successfully.
+
+External/not configured:
+- Docker was not installed locally, so Docker Compose was not started.
+- Stripe, OpenAI, AWS, SES/Resend, and product-specific provider accounts were not connected.
+
+
+2026-06-03 - Phase 2: Backend Core Auth and Organizations
+---------------------------------------------------------
+Changed:
+- Added custom User model with email as the primary identity.
+- Added JWT auth endpoints:
+  POST /api/v1/auth/register/
+  POST /api/v1/auth/login/
+  POST /api/v1/auth/refresh/
+  POST /api/v1/auth/logout/
+  GET/PATCH /api/v1/auth/me/
+- Added suspended-account login blocking.
+- Added Organization model.
+- Added Membership model with owner/admin/member roles and active/invited/disabled states.
+- Added organization-scoped access rules.
+- Added organization endpoints:
+  GET/POST /api/v1/organizations/
+  GET/PATCH/DELETE /api/v1/organizations/{id}/
+  GET /api/v1/organizations/{id}/members/
+  POST /api/v1/organizations/{id}/invite-member/
+- Added Django admin registration for users, organizations, and memberships.
+- Added tests for registration, login, logout, suspended user blocking, organization listing, cross-organization access blocking, role-based updates, and invite placeholder behavior.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Backend OpenAPI validation passed without warnings.
+- Backend pytest passed: 10 tests.
+- Frontend lint, typecheck, test, and build passed after backend changes.
+
+External/not configured:
+- Invite-member email delivery is intentionally not connected yet.
+- Future real email delivery should route through a NotificationService and SES/Resend provider.
+
+
+2026-06-03 - Phase 3: Billing and Usage Skeleton
+------------------------------------------------
+Changed:
+- Added billing app.
+- Added Plan model.
+- Added Subscription model.
+- Seeded default plans:
+  Free
+  Starter
+  Pro
+  Agency
+- Added automatic Free subscription creation for new organizations.
+- Added billing endpoints:
+  GET /api/v1/billing/plans/
+  GET /api/v1/billing/subscription/?organization_id=...
+  POST /api/v1/billing/checkout/
+  POST /api/v1/billing/customer-portal/
+  POST /api/v1/billing/webhooks/stripe/
+- Added Stripe checkout/customer portal skeleton.
+- Added Stripe webhook signature verification and event processing skeleton.
+- Added usage app.
+- Added UsageRecord model.
+- Added reusable usage services:
+  record_usage(...)
+  get_usage_total(...)
+  get_plan_limit(...)
+  assert_within_usage_limit(...)
+  usage_summary_for_organization(...)
+- Added usage endpoint:
+  GET /api/v1/usage/summary/?organization_id=...
+- Added docs/billing-and-usage.md.
+- Updated external accounts documentation with Stripe placeholder behavior.
+- Updated README, API conventions, architecture, testing docs, and Postman collection/environment.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Backend OpenAPI validation passed without warnings.
+- Backend pytest passed: 20 tests.
+- Postman JSON parsed successfully.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+
+External/not configured:
+- Stripe account is not connected yet.
+- STRIPE_SECRET_KEY is intentionally empty.
+- STRIPE_WEBHOOK_SECRET is intentionally empty outside tests.
+- Stripe Price IDs for Starter/Pro/Agency are intentionally empty.
+- Checkout and customer portal endpoints return a descriptive 503 until Stripe is configured.
+
+
+2026-06-03 - Phase 4: Integrations and AI Skeleton
+--------------------------------------------------
+Changed:
+- Added integrations app.
+- Added IntegrationProvider model for provider registry entries.
+- Added IntegrationAccount model for organization-scoped connected accounts/resources.
+- Added IntegrationCredential model with encrypted credential payload storage.
+- Added IntegrationSyncLog model for sync attempts, request IDs, retry state, rate-limit metadata, and errors.
+- Added integration endpoints:
+  GET /api/v1/integrations/providers/
+  GET /api/v1/integrations/accounts/?organization_id=...
+  POST /api/v1/integrations/{provider_slug}/connect/
+  POST /api/v1/integrations/{account_id}/disconnect/
+  GET /api/v1/integrations/{account_id}/sync-logs/
+- Added API-key connection skeleton with encrypted credential storage.
+- Added OAuth placeholder behavior with descriptive 503 responses until OAuth clients exist.
+- Added AI app.
+- Added AIProvider model and seeded OpenAI, Anthropic, and Gemini provider entries.
+- Added PromptTemplate model with versioning and optional structured output schema.
+- Added AICallLog model for organization/user/provider/model/status/token/cost/latency/error tracking.
+- Added AIResultCache foundation.
+- Added AI endpoints:
+  GET /api/v1/ai/providers/
+  GET /api/v1/ai/prompt-templates/
+  GET /api/v1/ai/call-logs/?organization_id=...
+- Added AI services for provider configuration status, prompt lookup, request hashing, structured output validation, and failed-call logging when provider keys are missing.
+- Added docs/integrations-and-ai.md.
+- Updated README, API conventions, architecture, testing docs, external accounts docs, and Postman collection/environment.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Backend OpenAPI validation passed without warnings.
+- Backend pytest passed: 29 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+
+External/not configured:
+- No OpenAI API key is configured yet.
+- No Anthropic API key is configured yet.
+- No Gemini API key is configured yet.
+- No external OAuth provider client IDs/secrets are configured yet.
+- Real provider API calls are intentionally not implemented in the core template.
+
+
+2026-06-03 - AI Decision Layer
+------------------------------
+Changed:
+- Added AI execution strategy hierarchy in code:
+  deterministic,
+  classic_ml,
+  local_model,
+  low_cost_llm,
+  standard_llm,
+  advanced_llm,
+  human_review.
+- Added AITaskProfile model for reusable task-level AI policy.
+- Added AIModelPolicy model for strategy/provider/model/fallback configuration.
+- Added AIModelDecisionLog model for organization-scoped decision audit.
+- Seeded default task profiles for recurring reports, table analysis, document
+  extraction, support assistant, and high-risk advice.
+- Added AI execution planning services:
+  select_ai_execution_plan(...)
+  run_ai_task(...)
+- Added AI execution planning endpoints:
+  GET /api/v1/ai/task-profiles/
+  GET /api/v1/ai/model-policies/?task_key=...
+  POST /api/v1/ai/execution-plan/
+  GET /api/v1/ai/decision-logs/?organization_id=...
+- Updated AI docs, architecture docs, external accounts docs, README, and Postman.
+- Added tests for deterministic selection, classic ML selection, low-cost LLM
+  selection, high-risk human review, product-specific executor handoff, and
+  organization-scoped decision logs.
+
+Verification:
+- Backend ruff check passed after fixes for this layer.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Backend OpenAPI validation passed without warnings after enum/queryset fixes.
+- AI/integrations tests passed: 16 tests.
+
+External/not configured:
+- No real OpenAI/Anthropic/Gemini client calls were added.
+- TensorFlow/PyTorch/local model dependencies were not added to the base template.
+- Product-specific deterministic, ML/DL, and local model executors remain extension points.
+
+
+2026-06-03 - Phase 5: Reports, Jobs, and Notifications
+------------------------------------------------------
+Changed:
+- Added jobs app.
+- Added JobRun model with queued/running/succeeded/failed/retrying/cancelled states.
+- Added job services for create/start/succeed/fail lifecycle transitions.
+- Added jobs endpoint:
+  GET /api/v1/jobs/?organization_id=...
+- Added reports app.
+- Added ReportTemplate, Report, and ReportArtifact models.
+- Seeded default report templates for weekly_summary and table_analysis.
+- Added report request and artifact endpoints:
+  GET /api/v1/reports/templates/
+  GET /api/v1/reports/?organization_id=...
+  POST /api/v1/reports/
+  GET /api/v1/reports/{id}/
+  GET /api/v1/reports/{id}/artifacts/
+- Added Celery task placeholder:
+  apps.reports.tasks.generate_report_task
+- Added notifications app.
+- Added NotificationPreference and NotificationDeliveryLog models.
+- Added notification services with console email placeholder behavior.
+- Added notification endpoints:
+  GET /api/v1/notifications/preferences/?organization_id=...
+  POST /api/v1/notifications/preferences/
+  GET /api/v1/notifications/delivery-logs/?organization_id=...
+- Added docs/reports-jobs-notifications.md.
+- Updated README, architecture docs, testing docs, external accounts docs, and Postman.
+- Added tests for report request creation, report generation placeholder,
+  job retry state, notification preferences, delivery logs, and organization scoping.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Backend OpenAPI validation passed without warnings.
+- Reports/jobs/notifications tests passed: 6 tests.
+- Full backend pytest passed: 42 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+
+External/not configured:
+- Real email delivery through SES/Resend/Postmark is not implemented yet.
+- PDF/DOCX rendering and S3 artifact storage are not implemented yet.
+- Celery worker execution was not started locally because Docker is not installed.
+
+
+2026-06-03 - Phase 6: Frontend Authenticated App Shell
+------------------------------------------------------
+Changed:
+- Replaced the static frontend scaffold with an authenticated React app shell.
+- Added typed frontend API client for auth, organizations, billing, usage,
+  integrations, AI, reports, jobs, and notifications.
+- Added AuthProvider with local access/refresh token persistence.
+- Added protected routing and unauthenticated redirect to /auth.
+- Added organization selector in the top bar.
+- Added login/register screen.
+- Added dashboard screen with plan, usage, reports, jobs, notifications, and AI
+  decision summary widgets.
+- Added billing/usage screen.
+- Added integrations provider/account screen.
+- Added AI decision layer screen with execution-plan preview.
+- Added reports screen with report request creation and job-run status.
+- Added notifications screen with preference upsert and delivery-log status.
+- Updated frontend unit and smoke tests for the authenticated app behavior.
+
+Verification:
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+
+External/not configured:
+- The frontend calls the local backend API at VITE_API_BASE_URL or
+  http://127.0.0.1:8000 by default.
+- Real external providers are still surfaced through backend placeholder states.
+
+
+2026-06-03 - Phase 7: Developer Workflow and Example Product Scaffold
+---------------------------------------------------------------------
+Changed:
+- Added root package.json with workspace-level command aliases for backend and
+  frontend checks, tests, build, and local seed data.
+- Added backend management command:
+  python manage.py seed_dev_data
+- Added reusable product namespace:
+  backend/apps/products/
+- Added first example product module:
+  backend/apps/products/example_insights/
+- Added ExampleInsightRequest model.
+- Added example product service that demonstrates the template pattern:
+  usage limit check,
+  AI execution-plan selection,
+  report request creation,
+  job-run creation,
+  usage recording.
+- Added example product endpoint:
+  GET/POST /api/v1/products/example-insights/requests/
+- Added frontend Example Product screen connected to the authenticated app shell.
+- Added typed frontend API methods and types for the example product.
+- Added Postman request for creating an example insight.
+- Added tests for the example product workflow, organization scoping, and dev
+  seed command idempotency.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Backend OpenAPI validation passed without warnings.
+- Full backend pytest passed: 45 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+- Root package JSON parsed successfully.
+- Root backend:check alias passed.
+- Root backend:lint alias passed.
+- Postman collection JSON parsed successfully.
+
+External/not configured:
+- No external provider calls were added.
+- The example product intentionally uses the AI Decision Layer and report/job
+  placeholders instead of real ML/AI execution.
+
+
+2026-06-03 - Phase 8: Product Hardening and API Contracts
+---------------------------------------------------------
+Changed:
+- Added billing feature-flag services:
+  get_plan_feature(...)
+  feature_enabled_for_organization(...)
+  assert_feature_enabled(...)
+- Added FeatureNotAvailable API exception for plan-gated product features.
+- Added plan feature seed migration for:
+  example_insights,
+  advanced_ai_models,
+  product_feature_flags.
+- Updated example_insights product workflow to check the example_insights feature
+  before usage, AI planning, report creation, and job creation.
+- Added focused API contract tests for frontend-facing endpoint response shapes:
+  auth/login,
+  organizations,
+  billing plans/subscription,
+  usage summary,
+  AI task profiles/execution plan/decision logs,
+  reports,
+  notification preferences,
+  example product requests.
+- Added frontend API error formatter for DRF field-level validation payloads.
+- Added success state component.
+- Added create/save/plan pending labels, disabled submit buttons, success states,
+  and backend error details on AI, reports, notifications, example product, and auth flows.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Backend OpenAPI validation passed without warnings.
+- Contract and example product tests passed: 8 tests.
+- Full backend pytest passed: 50 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+
+External/not configured:
+- No provider SDKs or external calls were added.
+- Playwright Chromium remains not installed locally, so e2e browser execution is
+  still skipped unless the browser package is installed later.
+
+
+2026-06-03 - Phase 9: Security and Operations Hardening
+--------------------------------------------------------
+Changed:
+- Added production security system checks for unsafe secrets, missing allowed
+  hosts, disabled HTTPS cookie protections, and console email in production.
+- Enabled DRF default throttling with scoped rates for auth, billing actions,
+  expensive AI/report actions, and product writes.
+- Added audit app with AuditLog model, admin registration, API endpoint, and
+  reusable audit event service.
+- Wired audit events into auth, billing, AI execution planning, report requests,
+  notification preferences, and the example product workflow.
+- Added cross-platform backend command runner for root npm aliases so local
+  Windows environments and CI can share the same commands.
+- Updated CI to execute backend and frontend checks through the root aliases.
+- Added Postman request for audit log inspection.
+- Added tests for audit log creation, organization scoping, throttle
+  configuration, and production security checks.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Backend OpenAPI validation passed without warnings.
+- Full backend pytest passed: 55 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+- Phase 9 security/audit tests passed: 5 tests.
+- Postman collection JSON parsed successfully.
+
+External/not configured:
+- No external provider calls were added.
+- Throttle rates use safe defaults and should be tuned per SaaS and environment.
+- Audit events store operational metadata only; secrets and payload-heavy data
+  should remain out of audit metadata.
+- No new markdown documents were created in this phase.
+
+
+2026-06-03 - Phase 10: Local Demo Readiness and Onboarding Polish
+------------------------------------------------------------------
+Changed:
+- Hardened seed_dev_data so the local demo user is always active, email-verified,
+  and able to log in with the documented demo password unless explicitly skipped.
+- Added seeded notification preference and delivery-log demo state so the
+  notifications page starts with meaningful local data.
+- Added seeded integration provider registry entries for CSV Upload, Google
+  Sheets, and Slack without calling external providers.
+- Added check_demo_ready management command for local API smoke checks.
+- Added optional --seed and --migrate flags to check_demo_ready.
+- Added root demo aliases:
+  npm run demo:seed
+  npm run demo:check
+  npm run demo:prepare
+- Added backend:migrate and backend:demo-check root aliases.
+- Updated demo:prepare to run migrations, seed data, and validate the local API
+  demo flow end to end.
+- Added tests for demo password reset, seeded notification state, and the
+  check_demo_ready --seed API flow.
+
+Verification:
+- npm run demo:prepare passed locally.
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Full backend pytest passed: 58 tests.
+- Focused seed/demo tests passed: 7 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+
+External/not configured:
+- No external provider calls were added.
+- Google Sheets and Slack are registry placeholders until OAuth credentials and
+  provider clients are added for a product.
+- Local SQLite demo database is generated by demo:prepare and ignored by git.
+- No new markdown documents were created in this phase.
+
+
+2026-06-03 - Phase 11: Containerized Runtime and AWS Deployment Readiness
+--------------------------------------------------------------------------
+Changed:
+- Added backend liveness and readiness endpoints:
+  GET /api/v1/health/live/
+  GET /api/v1/health/ready/
+- Added database readiness check and optional Redis readiness check controlled
+  by HEALTHCHECK_REQUIRE_REDIS.
+- Updated check_demo_ready to validate health, liveness, and readiness.
+- Converted backend Dockerfile into development and production targets.
+- Added backend container health check against the liveness endpoint.
+- Converted frontend Dockerfile into development, build, and production targets.
+- Added nginx production frontend config with SPA fallback and /healthz.
+- Added frontend container health checks for development and production images.
+- Hardened Docker Compose with service health checks and health-based
+  dependencies for backend, Celery worker, Celery beat, and frontend.
+- Added root .dockerignore to keep secrets, caches, local DBs, node_modules,
+  build outputs, and test artifacts out of Docker build contexts.
+- Added Docker Compose wrapper script:
+  node scripts/docker-compose.mjs
+- Added root Docker aliases:
+  npm run docker:config
+  npm run docker:build
+  npm run docker:up
+  npm run docker:down
+  npm run docker:ps
+  npm run docker:logs
+  npm run docker:demo:prepare
+- Added explicit TODO comments in env and Compose config for future AWS RDS,
+  ElastiCache, Secrets Manager, public domains, Stripe keys, AI keys, email
+  provider keys, and Sentry DSN.
+- Added health endpoint tests.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Docker Compose YAML parsed successfully.
+- npm run demo:check passed.
+- Full backend pytest passed: 60 tests.
+- Focused health/demo tests passed: 10 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+- package.json parsed successfully.
+
+External/not configured:
+- Docker CLI is not installed locally, so npm run docker:config could not be
+  executed through Docker; static YAML parsing passed.
+- No AWS, Stripe, OpenAI, email, OAuth, or Sentry API calls were added.
+- Real production values must be supplied through environment-specific secrets,
+  not committed files.
+- No new markdown documents were created in this phase.
+
+
+2026-06-03 - Phase 12: AWS Deployment Pipeline Skeleton
+--------------------------------------------------------
+Changed:
+- Added check_deploy_ready management command for staging/production deploy
+  readiness validation without calling external providers.
+- Added deploy readiness validation for required production env variables:
+  Django settings/secret/hosts/origins, database URL, Redis/Celery URLs,
+  frontend base URL, and AWS region.
+- Added optional deploy readiness gates for:
+  billing: Stripe secret and webhook secret,
+  AI: default provider and OpenAI API key,
+  email: provider and sender address,
+  storage: AWS S3 bucket,
+  observability: Sentry DSN.
+- Added rejection of unsafe deploy values such as local URLs in production,
+  wildcard allowed hosts, placeholder values, DEBUG=true, and unsafe secrets.
+- Added root deploy aliases:
+  npm run deploy:check
+  npm run deploy:check:production
+  npm run deploy:check:full
+- Added deploy/aws.env.example with explicit TODO placeholders for AWS RDS,
+  ElastiCache, S3, Stripe, AI provider keys, email provider, domains, and Sentry.
+- Added manual GitHub Actions deploy workflow skeleton.
+- Added deploy workflow placeholders for ECR image publish, ECS/App Runner
+  service update, and one-off database migrations.
+- Added deploy readiness tests.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Docker Compose, CI, and deploy workflow YAML parsed successfully.
+- npm run demo:check passed.
+- Full backend pytest passed: 64 tests.
+- Focused deploy/health tests passed: 7 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+- package.json parsed successfully.
+
+External/not configured:
+- No AWS account, ECR repository, ECS/App Runner service, RDS database,
+  ElastiCache Redis, S3 bucket, Stripe key, OpenAI key, email provider key, or
+  Sentry DSN was configured.
+- The deploy workflow is manual and intentionally contains TODO deployment
+  steps until AWS resources and GitHub environment secrets/vars exist.
+- No real provider calls were added.
+- No new markdown documents were created in this phase.
+
+
+2026-06-03 - Phase 13: Observability and Operations
+----------------------------------------------------
+Changed:
+- Added RequestIDMiddleware.
+- Added X-Request-ID response header for every backend response.
+- Added support for incoming X-Request-ID and X-Correlation-ID headers.
+- Updated audit logging to use the generated request_id when no external header
+  is supplied.
+- Added JSON logging formatter for structured logs.
+- Added logging settings controlled by LOG_LEVEL and LOG_FORMAT.
+- Added ENVIRONMENT and DEPLOY_VERSION settings for operational metadata.
+- Added Sentry initialization behind SENTRY_DSN with environment, release, trace
+  sample rate, and PII disabled by default.
+- Extended deploy readiness observability checks for ENVIRONMENT,
+  DEPLOY_VERSION, LOG_LEVEL, LOG_FORMAT, and SENTRY_DSN.
+- Added production deploy readiness rejection for local deploy versions and
+  non-json production log format.
+- Added env placeholders for deploy version, JSON logs, Sentry DSN, and trace
+  sampling.
+- Added request ID, structured logging, and observability readiness tests.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- npm run demo:check passed.
+- Full backend pytest passed: 68 tests.
+- Focused observability/security/deploy tests passed: 16 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+
+External/not configured:
+- Sentry remains disabled until SENTRY_DSN is supplied per environment.
+- No external observability, logging, or provider API calls were added.
+- Production deployments should set LOG_FORMAT=json and DEPLOY_VERSION to the
+  git SHA, release tag, or image tag.
+- No new markdown documents were created in this phase.
+
+
+2026-06-03 - Phase 14: Security and Compliance Final Hardening
+---------------------------------------------------------------
+Changed:
+- Added privacy app.
+- Added DataExportRequest model.
+- Added DataDeletionRequest model.
+- Added admin screens for export and deletion requests.
+- Added organization data export payload builder with organization,
+  membership-count, subscription, usage, report-count, job-count, and retention
+  metadata.
+- Added privacy API endpoints:
+  GET/POST /api/v1/privacy/exports/
+  GET/POST /api/v1/privacy/deletion-requests/
+- Restricted data exports to organization admins/owners.
+- Restricted deletion requests to organization owners.
+- Kept deletion requests non-destructive and pending by default for human review.
+- Added privacy audit events:
+  privacy.export.requested
+  privacy.deletion.requested
+- Added retention settings:
+  DATA_RETENTION_DAYS
+  AUDIT_LOG_RETENTION_DAYS
+- Added env placeholders for retention policy values.
+- Added Postman requests for privacy export/deletion workflows.
+- Added security scan aliases:
+  npm run security:backend:deploy-check
+  npm run security:frontend:audit
+- Added OpenAPI enum overrides for privacy choices.
+- Added privacy/compliance tests.
+
+Verification:
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Backend OpenAPI validation passed without warnings.
+- npm run demo:check passed.
+- Full backend pytest passed: 72 tests.
+- Focused privacy/API contract tests passed: 8 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+- Postman collection JSON parsed successfully.
+
+External/not configured:
+- No destructive deletion automation was added.
+- Retention periods are placeholders and must be tuned per SaaS, contract, and
+  jurisdiction before production launch.
+- npm run security:frontend:audit may require network access to npm audit data.
+- No external provider calls were added.
+- No new markdown documents were created in this phase.
+
+
+2026-06-03 - Phase 15: Template Productization
+----------------------------------------------
+Changed:
+- Added product scaffold generator:
+  node scripts/scaffold-product.mjs
+- Added dry-run scaffold command:
+  npm run product:scaffold:dry-run
+- Added product scaffold command:
+  npm run product:scaffold -- --slug product-slug --name "Product Name"
+- Scaffold generator validates kebab-case product slugs.
+- Scaffold generator prepares backend product module files:
+  apps.py, models.py, services.py, serializers.py, views.py, urls.py, admin.py,
+  migrations package.
+- Scaffold generator prepares a frontend page placeholder.
+- Generated service templates include TODO comments for model ladder decisions
+  and external provider/API key wiring through environment secrets only.
+- Added productization check script:
+  node scripts/check-productization.mjs
+- Added productization alias:
+  npm run product:check
+- Productization check verifies required template paths and scans env example
+  files for common real-secret patterns.
+
+Verification:
+- npm run product:scaffold:dry-run passed.
+- Dry run did not create backend/apps/products/sample_product.
+- Dry run did not create frontend/src/pages/SampleProductPage.tsx.
+- npm run product:check passed.
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- npm run demo:check passed.
+- Full backend pytest passed: 72 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+- package.json parsed successfully.
+
+External/not configured:
+- No product module was generated in this phase.
+- Real product integrations must still be added per SaaS after running the
+  scaffold command.
+- Generated product code intentionally uses TODO comments for API keys/provider
+  clients instead of embedding external dependencies.
+- No new markdown documents were created in this phase.
+
+
+2026-06-03 - Phase 16: Final QA and Release Candidate
+------------------------------------------------------
+Changed:
+- Added release candidate verification script:
+  node scripts/release-check.mjs
+- Added release alias:
+  npm run release:check
+- Release check validates package/Postman JSON files.
+- Release check runs productization check.
+- Release check runs backend lint, Django check, migration check, OpenAPI
+  validation, and full pytest.
+- Release check runs frontend lint, typecheck, unit tests, and production build.
+- Confirmed product scaffold dry-run did not create sample product files.
+- Confirmed no new markdown documents were created after the no-new-md rule.
+
+Verification:
+- npm run release:check passed.
+- package.json parsed successfully.
+- Postman collection JSON parsed successfully.
+- Postman local environment JSON parsed successfully.
+- Productization check passed.
+- Backend ruff check passed.
+- Backend Django system check passed.
+- Backend migration check passed.
+- Backend OpenAPI validation passed without warnings.
+- Full backend pytest passed: 72 tests.
+- Frontend lint passed.
+- Frontend typecheck passed.
+- Frontend unit test passed.
+- Frontend build passed.
+- backend/apps/products/sample_product was not created by dry-run.
+- frontend/src/pages/SampleProductPage.tsx was not created by dry-run.
+
+External/not configured:
+- Docker CLI is still not installed locally, so Docker runtime validation remains
+  static until Docker Desktop is installed.
+- AWS account/resources, GitHub deploy secrets, Stripe keys, OpenAI/API provider
+  keys, email provider credentials, OAuth apps, domains/DNS, and Sentry DSN are
+  still intentionally not configured.
+- All external values remain TODO placeholders in env/deploy files.
+- No new markdown documents were created in this phase.
+
+
+Release Candidate Status
+------------------------
+Template v1 release candidate is ready for local review.
+
+Remaining before real production deployment:
+- Install Docker Desktop and run npm run docker:config / docker:build.
+- Create AWS resources and GitHub environment secrets/vars.
+- Configure Stripe test mode before live billing.
+- Add provider API keys only for SaaS products that need real provider calls.
+- Configure domain/DNS, transactional email, and Sentry per environment.

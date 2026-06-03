@@ -1,0 +1,85 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy:
+    name: Deploy skeleton
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements-dev.txt
+
+      - name: Install frontend dependencies
+        run: npm install --prefix frontend
+
+      - name: Verify build before deploy
+        run: npm run check
+
+      - name: Validate deploy environment
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.production
+          DJANGO_DEBUG: "false"
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_ALLOWED_HOSTS: ${{ vars.DJANGO_ALLOWED_HOSTS }}
+          DJANGO_CSRF_TRUSTED_ORIGINS: ${{ vars.DJANGO_CSRF_TRUSTED_ORIGINS }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          CELERY_BROKER_URL: ${{ secrets.CELERY_BROKER_URL }}
+          CELERY_RESULT_BACKEND: ${{ secrets.CELERY_RESULT_BACKEND }}
+          FRONTEND_BASE_URL: ${{ vars.FRONTEND_BASE_URL }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          DEFAULT_AI_PROVIDER: ${{ vars.DEFAULT_AI_PROVIDER }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER }}
+          DEFAULT_FROM_EMAIL: ${{ vars.DEFAULT_FROM_EMAIL }}
+          AWS_STORAGE_BUCKET_NAME: ${{ vars.AWS_STORAGE_BUCKET_NAME }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: npm run deploy:check:full
+
+      - name: Build backend image
+        run: docker build --target production -f deploy/Dockerfile.backend -t saas-core-backend:${{ github.sha }} .
+
+      - name: Build frontend image
+        run: docker build --target production -f deploy/Dockerfile.frontend -t saas-core-frontend:${{ github.sha }} .
+
+      - name: Publish images
+        run: |
+          echo "TODO(aws-ecr): Configure aws-actions/configure-aws-credentials with OIDC."
+          echo "TODO(aws-ecr): Login to ECR and push backend/frontend images tagged with ${{ github.sha }}."
+
+      - name: Release application
+        run: |
+          echo "TODO(aws-deploy): Update ECS/App Runner services with the new image tags."
+          echo "TODO(aws-deploy): Run database migrations as a one-off task before shifting traffic."

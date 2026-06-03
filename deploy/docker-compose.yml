@@ -1,0 +1,138 @@
+name: ${COMPOSE_PROJECT_NAME:-saas-core-template}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-saas_core}
+      POSTGRES_USER: ${POSTGRES_USER:-saas_core}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saas_core} -d ${POSTGRES_DB:-saas_core}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+      target: development
+    # TODO(external-service): In production, replace local Postgres/Redis with
+    # AWS RDS and ElastiCache endpoints from Secrets Manager or task env vars.
+    # TODO(api-key): Keep Stripe/OpenAI/AWS/email keys out of images and pass
+    # them through environment-specific secret stores.
+    command: python manage.py runserver 0.0.0.0:8000
+    working_dir: /app/backend
+    env_file:
+      - ../backend/.env.example
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-saas_core}:${POSTGRES_PASSWORD:-change-me-local}@postgres:5432/${POSTGRES_DB:-saas_core}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      HEALTHCHECK_REQUIRE_REDIS: "true"
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ../backend:/app/backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/v1/health/ready/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  celery_worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+      target: development
+    command: celery -A config worker --loglevel=info
+    working_dir: /app/backend
+    env_file:
+      - ../backend/.env.example
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-saas_core}:${POSTGRES_PASSWORD:-change-me-local}@postgres:5432/${POSTGRES_DB:-saas_core}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    volumes:
+      - ../backend:/app/backend
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_beat:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+      target: development
+    command: celery -A config beat --loglevel=info
+    working_dir: /app/backend
+    env_file:
+      - ../backend/.env.example
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-saas_core}:${POSTGRES_PASSWORD:-change-me-local}@postgres:5432/${POSTGRES_DB:-saas_core}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    volumes:
+      - ../backend:/app/backend
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+      target: development
+    # TODO(deployment): For production, build the production target and set
+    # VITE_API_BASE_URL to the public backend/API Gateway URL for that SaaS.
+    env_file:
+      - ../frontend/.env.example
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ../frontend:/app/frontend
+      - frontend_node_modules:/app/frontend/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5173').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  postgres_data:
+  redis_data:
+  frontend_node_modules:

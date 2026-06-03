@@ -1,0 +1,477 @@
+{
+  "info": {
+    "name": "SaaS Core Template",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/health/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "health", ""]
+        }
+      }
+    },
+    {
+      "name": "Billing Plans",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/billing/plans/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "billing", "plans", ""]
+        }
+      }
+    },
+    {
+      "name": "Usage Summary",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/usage/summary/?organization_id={{organization_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "usage", "summary", ""],
+          "query": [
+            {
+              "key": "organization_id",
+              "value": "{{organization_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Integration Providers",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/integrations/providers/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "integrations", "providers", ""]
+        }
+      }
+    },
+    {
+      "name": "Integration Accounts",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/integrations/accounts/?organization_id={{organization_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "integrations", "accounts", ""],
+          "query": [
+            {
+              "key": "organization_id",
+              "value": "{{organization_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "AI Providers",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/ai/providers/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "ai", "providers", ""]
+        }
+      }
+    },
+    {
+      "name": "AI Task Profiles",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/ai/task-profiles/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "ai", "task-profiles", ""]
+        }
+      }
+    },
+    {
+      "name": "AI Execution Plan",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"organization_id\": {{organization_id}},\n  \"task_key\": \"table_analysis\",\n  \"input_payload\": {\"rows\": 1000},\n  \"constraints\": {\"can_use_classic_ml\": true}\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/ai/execution-plan/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "ai", "execution-plan", ""]
+        }
+      }
+    },
+    {
+      "name": "AI Decision Logs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/ai/decision-logs/?organization_id={{organization_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "ai", "decision-logs", ""],
+          "query": [
+            {
+              "key": "organization_id",
+              "value": "{{organization_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "AI Call Logs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/ai/call-logs/?organization_id={{organization_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "ai", "call-logs", ""],
+          "query": [
+            {
+              "key": "organization_id",
+              "value": "{{organization_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Report Templates",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/reports/templates/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "reports", "templates", ""]
+        }
+      }
+    },
+    {
+      "name": "Create Report",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"organization_id\": {{organization_id}},\n  \"title\": \"Weekly KPI Summary\",\n  \"template_key\": \"weekly_summary\",\n  \"requested_format\": \"json\",\n  \"input_payload\": {\"metrics\": {\"revenue\": 1000}}\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/reports/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "reports", ""]
+        }
+      }
+    },
+    {
+      "name": "Jobs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/jobs/?organization_id={{organization_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "jobs", ""],
+          "query": [
+            {
+              "key": "organization_id",
+              "value": "{{organization_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Notification Preferences",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/notifications/preferences/?organization_id={{organization_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "notifications", "preferences", ""],
+          "query": [
+            {
+              "key": "organization_id",
+              "value": "{{organization_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Notification Delivery Logs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/notifications/delivery-logs/?organization_id={{organization_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "notifications", "delivery-logs", ""],
+          "query": [
+            {
+              "key": "organization_id",
+              "value": "{{organization_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Example Insight",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"organization_id\": {{organization_id}},\n  \"title\": \"Revenue Trend Insight\",\n  \"input_payload\": {\n    \"rows\": [\n      {\"month\": \"January\", \"revenue\": 1000, \"users\": 75},\n      {\"month\": \"February\", \"revenue\": 1250, \"users\": 91}\n    ],\n    \"metrics\": [\"revenue\", \"users\"]\n  },\n  \"constraints\": {\"can_use_classic_ml\": true}\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/products/example-insights/requests/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "products", "example-insights", "requests", ""]
+        }
+      }
+    },
+    {
+      "name": "Privacy Data Exports",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/privacy/exports/?organization_id={{organization_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "privacy", "exports", ""],
+          "query": [
+            {
+              "key": "organization_id",
+              "value": "{{organization_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Privacy Data Export",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"organization_id\": {{organization_id}},\n  \"scope\": \"organization\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/privacy/exports/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "privacy", "exports", ""]
+        }
+      }
+    },
+    {
+      "name": "Privacy Deletion Requests",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/privacy/deletion-requests/?organization_id={{organization_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "privacy", "deletion-requests", ""],
+          "query": [
+            {
+              "key": "organization_id",
+              "value": "{{organization_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Privacy Deletion Request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"organization_id\": {{organization_id}},\n  \"target\": \"organization\",\n  \"reason\": \"Customer requested deletion.\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/privacy/deletion-requests/",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "privacy", "deletion-requests", ""]
+        }
+      }
+    },
+    {
+      "name": "Audit Logs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}{{api_prefix}}/audit/logs/?organization_id={{organization_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["{{api_prefix}}", "audit", "logs", ""],
+          "query": [
+            {
+              "key": "organization_id",
+              "value": "{{organization_id}}"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
