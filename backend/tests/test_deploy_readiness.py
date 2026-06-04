@@ -7,6 +7,7 @@ from django.core.management.base import CommandError
 BASE_ENV = {
     "DJANGO_SETTINGS_MODULE": "config.settings.production",
     "DJANGO_SECRET_KEY": "prod-secret-key-with-enough-length",
+    "INTEGRATION_CREDENTIALS_KEY": "integration-secret-key-with-enough-length",
     "DJANGO_ALLOWED_HOSTS": "api.staging.example.test",
     "DJANGO_CSRF_TRUSTED_ORIGINS": "https://app.staging.example.test",
     "CORS_ALLOWED_ORIGINS": "https://app.staging.example.test",
@@ -67,6 +68,17 @@ def test_check_deploy_ready_requires_stripe_when_billing_is_enabled(monkeypatch)
 
     assert "STRIPE_SECRET_KEY" in str(exc.value)
     assert "STRIPE_WEBHOOK_SECRET" in str(exc.value)
+
+
+def test_check_deploy_ready_requires_distinct_integration_credentials_key(monkeypatch):
+    set_base_env(monkeypatch)
+    monkeypatch.setenv("INTEGRATION_CREDENTIALS_KEY", BASE_ENV["DJANGO_SECRET_KEY"])
+
+    with pytest.raises(CommandError) as exc:
+        call_command("check_deploy_ready")
+
+    assert "INTEGRATION_CREDENTIALS_KEY" in str(exc.value)
+    assert "distinct from DJANGO_SECRET_KEY" in str(exc.value)
 
 
 def test_check_deploy_ready_rejects_local_urls_for_production(monkeypatch):

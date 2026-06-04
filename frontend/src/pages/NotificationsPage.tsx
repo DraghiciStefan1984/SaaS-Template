@@ -8,13 +8,14 @@ import { StatusBadge } from "../components/StatusBadge";
 import { api, getApiErrorMessage, listResults } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatDate } from "../lib/format";
-import { useWorkspace } from "../lib/workspace";
+import { isOrganizationAdmin, useWorkspace } from "../lib/workspace";
 
 export function NotificationsPage() {
   const queryClient = useQueryClient();
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const { selectedOrganization } = useWorkspace();
   const organizationId = selectedOrganization?.id;
+  const canViewDeliveryLogs = isOrganizationAdmin(selectedOrganization);
   const [event, setEvent] = useState("report_ready");
   const [channel, setChannel] = useState("email");
   const [isEnabled, setIsEnabled] = useState(true);
@@ -25,7 +26,7 @@ export function NotificationsPage() {
     queryFn: () => api.notificationPreferences(accessToken, organizationId!),
   });
   const deliveryLogsQuery = useQuery({
-    enabled: Boolean(accessToken && organizationId),
+    enabled: Boolean(accessToken && organizationId && canViewDeliveryLogs),
     queryKey: ["notification-delivery-logs", organizationId],
     queryFn: () => api.notificationDeliveryLogs(accessToken, organizationId!),
   });
@@ -37,6 +38,7 @@ export function NotificationsPage() {
     mutationFn: () =>
       api.upsertNotificationPreference(accessToken, {
         organization_id: organizationId!,
+        user_id: user?.id,
         event,
         channel,
         is_enabled: isEnabled,
@@ -93,10 +95,10 @@ export function NotificationsPage() {
         </form>
       </PageHeader>
 
-      {preferencesQuery.isLoading || deliveryLogsQuery.isLoading ? (
+      {preferencesQuery.isLoading || (canViewDeliveryLogs && deliveryLogsQuery.isLoading) ? (
         <LoadingState title="Loading notifications" />
       ) : null}
-      {preferencesQuery.isError || deliveryLogsQuery.isError ? (
+      {preferencesQuery.isError || (canViewDeliveryLogs && deliveryLogsQuery.isError) ? (
         <ErrorState title="Notifications unavailable" />
       ) : null}
       {savePreferenceMutation.isError ? (

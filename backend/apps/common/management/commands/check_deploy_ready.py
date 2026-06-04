@@ -7,6 +7,7 @@ UNSAFE_SECRET = "unsafe-local-development-key-change-me-before-production"
 BASE_REQUIRED_ENV = (
     "DJANGO_SETTINGS_MODULE",
     "DJANGO_SECRET_KEY",
+    "INTEGRATION_CREDENTIALS_KEY",
     "DJANGO_ALLOWED_HOSTS",
     "DJANGO_CSRF_TRUSTED_ORIGINS",
     "CORS_ALLOWED_ORIGINS",
@@ -88,6 +89,10 @@ class Command(BaseCommand):
 
         if os.environ.get("DJANGO_DEBUG", "").lower() in {"1", "true", "yes", "on"}:
             failures.append("- DJANGO_DEBUG: must not be true outside local development.")
+        if os.environ.get("INTEGRATION_CREDENTIALS_KEY") == os.environ.get("DJANGO_SECRET_KEY"):
+            failures.append(
+                "- INTEGRATION_CREDENTIALS_KEY: must be distinct from DJANGO_SECRET_KEY."
+            )
 
         if failures:
             raise CommandError(

@@ -4,10 +4,17 @@ import stripe
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import APIException
 
-from .models import Plan, Subscription, SubscriptionStatus
+from .models import (
+    Plan,
+    StripeWebhookEvent,
+    StripeWebhookEventStatus,
+    Subscription,
+    SubscriptionStatus,
+)
 
 FREE_PLAN_SLUG = "free"
 
@@ -52,11 +59,20 @@ def get_subscription_for_organization(organization):
     return ensure_free_subscription(organization)
 
 
-def get_plan_feature(organization, feature_name, default=False):
+def get_effective_plan_for_organization(organization):
     subscription = get_subscription_for_organization(organization)
-    if subscription is None or subscription.plan is None:
+    if subscription is None:
+        return None
+    if subscription.is_billable_active:
+        return subscription.plan
+    return get_free_plan()
+
+
+def get_plan_feature(organization, feature_name, default=False):
+    plan = get_effective_plan_for_organization(organization)
+    if plan is None:
         return default
-    return subscription.plan.features.get(feature_name, default)
+    return plan.features.get(feature_name, default)
 
 
 def feature_enabled_for_organization(organization, feature_name, default=False):
@@ -152,8 +168,11 @@ def sync_checkout_session_completed(session):
 
     from apps.organizations.models import Organization
 
-    organization = Organization.objects.get(id=organization_id)
-    plan = Plan.objects.get(slug=plan_slug)
+    organization = Organization.objects.filter(id=organization_id).first()
+    plan = Plan.objects.filter(slug=plan_slug, is_active=True).first()
+    if organization is None or plan is None:
+        return None
+
     subscription = ensure_free_subscription(organization)
     subscription.plan = plan
     subscription.status = SubscriptionStatus.ACTIVE
@@ -182,14 +201,18 @@ def sync_stripe_subscription(stripe_subscription):
     if subscription is None and organization_id:
         from apps.organizations.models import Organization
 
-        organization = Organization.objects.get(id=organization_id)
-        subscription = ensure_free_subscription(organization)
+        organization = Organization.objects.filter(id=organization_id).first()
+        if organization is not None:
+            subscription = ensure_free_subscription(organization)
 
     if subscription is None:
         return None
 
     if plan_slug:
-        subscription.plan = Plan.objects.get(slug=plan_slug)
+        plan = Plan.objects.filter(slug=plan_slug, is_active=True).first()
+        if plan is None:
+            return None
+        subscription.plan = plan
 
     subscription.status = _object_get(stripe_subscription, "status") or subscription.status
     subscription.stripe_customer_id = _object_get(stripe_subscription, "customer") or ""
@@ -211,17 +234,54 @@ def sync_stripe_subscription(stripe_subscription):
     return subscription
 
 
+@transaction.atomic
 def process_stripe_event(event):
+    event_id = _object_get(event, "id", "")
     event_type = _object_get(event, "type")
     data_object = _object_get(_object_get(event, "data", {}), "object", {})
+    webhook_event = None
+    if event_id:
+        webhook_event, created = StripeWebhookEvent.objects.select_for_update().get_or_create(
+            event_id=event_id,
+            defaults={
+                "event_type": event_type or "",
+                "status": StripeWebhookEventStatus.PROCESSING,
+            },
+        )
+        if not created and webhook_event.status == StripeWebhookEventStatus.PROCESSED:
+            return {
+                "received": True,
+                "event_type": event_type,
+                "processed": True,
+                "duplicate": True,
+            }
+        webhook_event.event_type = event_type or webhook_event.event_type
+        webhook_event.status = StripeWebhookEventStatus.PROCESSING
+        webhook_event.error_message = ""
+        webhook_event.save(update_fields=["event_type", "status", "error_message", "updated_at"])
 
+    processed = False
     if event_type == "checkout.session.completed":
-        sync_checkout_session_completed(data_object)
+        processed = sync_checkout_session_completed(data_object) is not None
     elif event_type in {
         "customer.subscription.created",
         "customer.subscription.updated",
         "customer.subscription.deleted",
     }:
-        sync_stripe_subscription(data_object)
+        processed = sync_stripe_subscription(data_object) is not None
 
-    return {"received": True, "event_type": event_type}
+    if webhook_event is not None:
+        webhook_event.status = (
+            StripeWebhookEventStatus.PROCESSED
+            if processed
+            else StripeWebhookEventStatus.SKIPPED
+        )
+        webhook_event.processed_at = timezone.now()
+        webhook_event.save(update_fields=["status", "processed_at", "updated_at"])
+
+    return {
+        "received": True,
+        "event_type": event_type,
+        "processed": processed,
+        "duplicate": False,
+    }

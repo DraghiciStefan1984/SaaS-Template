@@ -29,7 +29,7 @@ class IntegrationProviderNotConfigured(APIException):
 
 
 def _fernet():
-    digest = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    digest = hashlib.sha256(settings.INTEGRATION_CREDENTIALS_KEY.encode()).digest()
     key = base64.urlsafe_b64encode(digest)
     return Fernet(key)
 
@@ -117,8 +117,20 @@ def connect_integration_account(
 
 @transaction.atomic
 def disconnect_integration_account(account):
+    IntegrationCredential.objects.filter(integration_account=account).delete()
     account.status = IntegrationAccountStatus.DISCONNECTED
-    account.save(update_fields=["status", "updated_at"])
+    account.external_account_id = ""
+    account.scopes = []
+    account.metadata = {**account.metadata, "credential_deleted": True}
+    account.save(
+        update_fields=[
+            "status",
+            "external_account_id",
+            "scopes",
+            "metadata",
+            "updated_at",
+        ]
+    )
     return account
 
 

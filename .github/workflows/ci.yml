@@ -65,5 +65,14 @@ jobs:
       - name: Tests
         run: npm run frontend:test
 
+      - name: Security audit
+        run: npm run security:frontend:audit
+
+      - name: Install Playwright browsers
+        run: npm --prefix frontend exec playwright install --with-deps chromium
+
+      - name: E2E smoke tests
+        run: npm --prefix frontend run e2e
+
       - name: Build
         run: npm run frontend:build

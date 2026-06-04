@@ -16,7 +16,7 @@ export type User = {
 
 export type AuthTokens = {
   access: string;
-  refresh: string;
+  refresh?: string;
 };
 
 export type AuthResponse = {
@@ -52,8 +52,8 @@ export type Subscription = {
   organization: number;
   plan: Plan;
   status: string;
-  stripe_customer_id: string;
-  stripe_subscription_id: string;
+  stripe_customer_id?: string;
+  stripe_subscription_id?: string;
   cancel_at_period_end: boolean;
   current_period_start: string | null;
   current_period_end: string | null;
@@ -224,9 +224,6 @@ export type ExampleInsightRequest = {
   job_run: number | null;
   title: string;
   status: string;
-  input_payload: Record<string, unknown>;
-  constraints: Record<string, unknown>;
-  ai_execution_plan: AIExecutionPlan;
-  error_message: string;
+  strategy: string;
   created_at: string;
 };

@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.common.serializers import validate_json_payload_size
+
 from .models import (
     AICallLog,
     AIModelDecisionLog,
@@ -141,9 +143,9 @@ class AIModelDecisionLogSerializer(serializers.ModelSerializer):
 class AIExecutionPlanRequestSerializer(serializers.Serializer):
     organization_id = serializers.IntegerField()
     task_key = serializers.SlugField()
-    input_payload = serializers.JSONField(required=False)
-    constraints = serializers.JSONField(required=False)
-    metadata = serializers.JSONField(required=False)
+    input_payload = serializers.JSONField(required=False, validators=[validate_json_payload_size])
+    constraints = serializers.JSONField(required=False, validators=[validate_json_payload_size])
+    metadata = serializers.JSONField(required=False, validators=[validate_json_payload_size])
     log_decision = serializers.BooleanField(required=False, default=True)
 
 

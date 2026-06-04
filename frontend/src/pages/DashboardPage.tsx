@@ -15,7 +15,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { api, listResults } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatNumber } from "../lib/format";
-import { useWorkspace } from "../lib/workspace";
+import { isOrganizationAdmin, useWorkspace } from "../lib/workspace";
 
 function MetricTile({
   label,
@@ -43,6 +43,7 @@ export function DashboardPage() {
   const { selectedOrganization } = useWorkspace();
   const organizationId = selectedOrganization?.id;
   const enabled = Boolean(accessToken && organizationId);
+  const canViewOperations = isOrganizationAdmin(selectedOrganization);
 
   const subscriptionQuery = useQuery({
     enabled,
@@ -60,17 +61,17 @@ export function DashboardPage() {
     queryFn: () => api.reports(accessToken, organizationId!),
   });
   const jobsQuery = useQuery({
-    enabled,
+    enabled: enabled && canViewOperations,
     queryKey: ["jobs", organizationId],
     queryFn: () => api.jobs(accessToken, organizationId!),
   });
   const decisionsQuery = useQuery({
-    enabled,
+    enabled: enabled && canViewOperations,
     queryKey: ["ai-decision-logs", organizationId],
     queryFn: () => api.aiDecisionLogs(accessToken, organizationId!),
   });
   const notificationQuery = useQuery({
-    enabled,
+    enabled: enabled && canViewOperations,
     queryKey: ["notification-delivery-logs", organizationId],
     queryFn: () => api.notificationDeliveryLogs(accessToken, organizationId!),
   });
@@ -83,17 +84,17 @@ export function DashboardPage() {
     subscriptionQuery.isLoading ||
     usageQuery.isLoading ||
     reportsQuery.isLoading ||
-    jobsQuery.isLoading ||
-    decisionsQuery.isLoading ||
-    notificationQuery.isLoading;
+    (canViewOperations && jobsQuery.isLoading) ||
+    (canViewOperations && decisionsQuery.isLoading) ||
+    (canViewOperations && notificationQuery.isLoading);
 
   const hasError =
     subscriptionQuery.isError ||
     usageQuery.isError ||
     reportsQuery.isError ||
-    jobsQuery.isError ||
-    decisionsQuery.isError ||
-    notificationQuery.isError;
+    (canViewOperations && jobsQuery.isError) ||
+    (canViewOperations && decisionsQuery.isError) ||
+    (canViewOperations && notificationQuery.isError);
 
   const reports = listResults(reportsQuery.data);
   const jobs = listResults(jobsQuery.data);
@@ -124,12 +125,14 @@ export function DashboardPage() {
         <MetricTile
           icon={Bot}
           label="AI Decisions"
-          value={formatNumber(decisionsQuery.data?.count ?? decisions.length)}
+          value={canViewOperations ? formatNumber(decisionsQuery.data?.count ?? decisions.length) : "n/a"}
         />
         <MetricTile
           icon={Mail}
           label="Notifications"
-          value={formatNumber(notificationQuery.data?.count ?? notifications.length)}
+          value={
+            canViewOperations ? formatNumber(notificationQuery.data?.count ?? notifications.length) : "n/a"
+          }
         />
       </section>
 

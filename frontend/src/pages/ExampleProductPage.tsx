@@ -86,7 +86,7 @@ export function ExampleProductPage() {
       ) : null}
       {createRequestMutation.isSuccess ? (
         <SuccessState
-          detail={`Strategy: ${createRequestMutation.data.ai_execution_plan.strategy}`}
+          detail={`Strategy: ${createRequestMutation.data.strategy}`}
           title="Insight request created"
         />
       ) : null}
@@ -116,7 +116,7 @@ export function ExampleProductPage() {
                       <StatusBadge value={request.status} />
                     </td>
                     <td>
-                      <StatusBadge value={request.ai_execution_plan.strategy} />
+                      <StatusBadge value={request.strategy || "planned"} />
                     </td>
                     <td>{request.report ?? "n/a"}</td>
                     <td>{request.job_run ?? "n/a"}</td>

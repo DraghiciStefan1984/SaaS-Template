@@ -821,6 +821,237 @@ External/not configured:
 - No new markdown documents were created in this phase.
 
 
+2026-06-04 - Code Review Remediation: Security Guardrails
+----------------------------------------------------------
+Changed:
+- Replaced the default JWT refresh endpoint with an account-status-aware refresh
+  view so suspended users cannot continue refreshing tokens after suspension.
+- Restricted notification preference updates:
+  members can update only their own preferences,
+  organization-wide and other-user preferences require owner/admin.
+- Restricted sensitive operational logs to owner/admin roles:
+  audit logs, AI decision logs, AI call logs, job runs, and notification
+  delivery logs.
+- Added feature and usage guards to the generic reports endpoint.
+- Added atomic check-and-record usage reservation to reduce quota race
+  conditions under concurrent requests.
+- Added report feature/limit seed migration for the generic reports workflow.
+- Sanitized public AI constraints so clients cannot force strategy/model
+  escalation, restrict allowed strategies, or spoof expected run volume.
+- Updated the example product to combine server-side AI policy with sanitized
+  public constraints.
+- Added JSON payload size validation for AI execution-plan payloads, reports,
+  example product inputs, and notification preference config.
+- Added billing redirect URL allowlist validation for Stripe checkout and
+  customer portal flows.
+- Added Stripe webhook event persistence and idempotency by event ID, including
+  skipped handling for invalid metadata instead of 500 responses.
+- Added a separate INTEGRATION_CREDENTIALS_KEY setting for encrypted integration
+  credentials, deploy readiness checks, and env placeholders.
+- Updated frontend auth storage from localStorage to sessionStorage as an
+  incremental hardening step.
+- Added production nginx security headers and /api/v1 proxy support for the
+  default frontend Docker production image.
+- Added frontend CI npm audit and Playwright e2e smoke-test steps.
+- Updated deploy workflow env wiring and the external setup checklist for the
+  new security/configuration values.
+
+Verification:
+- npm run backend:lint passed.
+- npm run backend:check passed.
+- npm run backend:migrations:check passed.
+- Full backend pytest passed: 89 tests.
+- Focused security/billing/reports/AI/deploy tests passed: 76 tests.
+- npm run frontend:lint passed.
+- npm run frontend:typecheck passed.
+- npm run frontend:test passed.
+- npm run frontend:build passed.
+- npm run release:check passed.
+
+External/not configured:
+- Docker CLI is still not installed locally, so Docker runtime validation remains
+  static until Docker Desktop is installed.
+- CI now installs Playwright Chromium and runs e2e smoke tests, but this was not
+  run locally to avoid browser downloads.
+- Stripe, AWS, OpenAI/API provider keys, email provider credentials, domains/DNS,
+  and Sentry DSN remain intentionally unconfigured placeholders.
+- A future production auth phase should replace browser-stored bearer tokens
+  with a coordinated HttpOnly cookie refresh-token flow.
+- Full automated deletion execution remains intentionally non-destructive and
+  pending-by-default until a SaaS-specific legal/compliance policy is defined.
+- Existing markdown setup documentation was updated; no new markdown document
+  was created in this phase.
+
+
+2026-06-04 - Code Review Remediation: Access and Exposure Hardening
+--------------------------------------------------------------------
+Changed:
+- Billing feature and usage enforcement now uses an effective plan:
+  active/free/trialing subscriptions use their configured plan,
+  inactive paid subscriptions fall back to the Free plan for features and
+  limits.
+- Existing access tokens are now checked against account_status on every JWT
+  authenticated request, so suspended users cannot keep using unexpired access
+  tokens.
+- Prompt template and AI model policy endpoints are restricted to Django staff
+  users because they expose internal prompts, model choices, fallback rules, and
+  cost/quality thresholds.
+- Report list/create responses now use a safe summary serializer without
+  input_payload, result_summary, error_message, or artifact details.
+- Report detail and artifact endpoints now require owner/admin organization
+  roles.
+- Integration sync logs now require owner/admin organization roles.
+- Privacy organization exports now include real organization records for
+  memberships, usage records, reports/artifacts, jobs, notification settings and
+  delivery logs, integration accounts/sync logs, AI logs, and audit logs. Stored
+  integration credential payloads are still excluded.
+- Product scaffold output now includes feature flag enforcement, atomic usage
+  recording, JSON payload size validation, and TODO guidance for plan seed
+  migrations.
+- Productization check now verifies that scaffold-product.mjs keeps those core
+  guards.
+- Frontend pages now avoid admin-only job, AI decision, and notification
+  delivery-log queries for non-admin members.
+- Frontend notification preference saves include the current user_id so members
+  update personal preferences rather than org-wide preferences.
+- Frontend API base URL handling now normalizes values with or without `/api/v1`
+  to avoid doubled API prefixes.
+- Frontend production Docker default no longer bakes `/api/v1` into
+  VITE_API_BASE_URL.
+- Nginx CSP connect-src was tightened to same-origin for the default production
+  frontend image.
+- Billing redirect validation now rejects HTTP redirect URLs outside local
+  development even when the host is allowlisted.
+- External setup guidance was updated for VITE_API_BASE_URL semantics.
+
+Verification:
+- npm run backend:lint passed.
+- npm run backend:check passed.
+- npm run backend:migrations:check passed.
+- Focused backend tests passed: 69 tests.
+- npm run product:check passed.
+- npm run frontend:lint passed.
+- npm run frontend:typecheck passed.
+- npm run frontend:test passed.
+- npm run frontend:build passed.
+
+External/not configured:
+- Browser token hardening was completed in the later Final Compliance and
+  Payload Cleanup remediation entry.
+- Deletion requests remain pending/manual-review by default; destructive
+  deletion execution still requires SaaS-specific retention and legal policy.
+- Deploy workflow still contains TODO publish/release/migration steps until AWS
+  resources and deployment choices are finalized.
+- Docker CLI is still not installed locally, so Docker runtime validation remains
+  static until Docker Desktop is installed.
+- Existing markdown setup documentation was updated; no new markdown document
+  was created in this phase.
+
+
+2026-06-04 - Code Review Remediation: Final Compliance and Payload Cleanup
+---------------------------------------------------------------------------
+Changed:
+- Privacy deletion requests now have an owner-only execute endpoint that runs a
+  non-destructive anonymization flow for organization/account deletion targets.
+- The privacy anonymizer clears or neutralizes organization identifiers,
+  memberships, billing provider IDs, report payloads/results, job metadata,
+  notification payloads, integration credentials/sync metadata, AI decision/call
+  payloads, usage metadata, and sensitive audit request context while preserving
+  relational integrity.
+- Example product list/create responses now use a summary serializer that hides
+  input_payload, constraints, ai_execution_plan, and provider error details from
+  active members.
+- Product scaffold output now generates the same safe request summary serializer
+  pattern for new SaaS modules.
+- Subscription responses now expose Stripe customer/subscription identifiers
+  only to owner/admin organization roles; member responses use a summary
+  serializer without provider IDs.
+- Integration connect payloads now apply JSON payload-size validation to
+  credential_payload and metadata before encrypted storage.
+- Auth login/register/refresh now issue refresh tokens through a
+  HttpOnly/SameSite cookie instead of returning them to browser JavaScript.
+- Auth refresh/logout continue to accept a refresh token in the request payload
+  for API compatibility, but can now operate from the refresh cookie.
+- CORS credentials and refresh-cookie environment settings were added for local
+  and AWS deployments.
+- Frontend subscription types and billing UI now treat Stripe identifiers as
+  admin-only fields.
+- Frontend auth storage removed refresh token persistence from JavaScript; a
+  later remediation entry moves access tokens to memory-only storage.
+- Frontend tests now cover API base URL normalization and organization role
+  admin/member gating helpers.
+- The demo readiness check now validates the example product summary contract
+  instead of relying on the internal ai_execution_plan field.
+
+Verification:
+- Focused privacy/example/API contract tests passed: 18 tests.
+- Focused billing/integration tests passed: 39 tests.
+- Focused auth/API contract tests passed: 16 tests.
+- npm run product:check passed.
+- npm run backend:lint passed.
+- npm run frontend:lint passed.
+- npm run frontend:typecheck passed.
+- npm run frontend:test passed.
+- npm run release:check passed, including full backend pytest: 99 tests.
+
+External/not configured:
+- Deploy workflow publish/release/migration steps remain TODO until AWS
+  resources, ECR/ECS choices, domains, and environment secrets are finalized.
+- Docker CLI is still not installed locally, so Docker runtime validation remains
+  static until Docker Desktop is installed.
+- Existing markdown setup documentation was updated earlier; no new markdown
+  document was created in this phase.
+
+
+2026-06-04 - Code Review Remediation: Product Privacy, Jobs, and Token Runtime
+-------------------------------------------------------------------------------
+Changed:
+- Privacy organization exports now include product-module data for
+  example_insight_requests, including input payloads, constraints, AI execution
+  plans, and provider errors.
+- Privacy organization anonymization now clears example_insight_requests payloads,
+  constraints, AI plans, titles, and errors.
+- DELETE /organizations/{id}/ no longer hard-deletes the organization. It now
+  creates and executes an organization deletion request, preserving compliance
+  history while anonymizing the organization and disabling memberships.
+- Report request creation now enqueues generate_report_task through Celery after
+  transaction commit and stores the Celery task ID on the JobRun metadata.
+- generate_report_task now uses bound-task retry behavior when a retryable job
+  failure occurs.
+- Integration disconnect now deletes the encrypted credential record, clears
+  external account identifiers/scopes, and marks the local metadata accordingly.
+- Audit IP capture now ignores X-Forwarded-For by default. It uses that header
+  only when AUDIT_TRUST_X_FORWARDED_FOR is explicitly enabled.
+- Frontend access tokens are now memory-only. The app restores sessions through
+  the HttpOnly refresh cookie, fetches /auth/me after refresh, and retries one
+  authenticated request after a 401 refresh.
+- Product scaffold output now includes an explicit privacy TODO for product
+  export/anonymization hooks.
+- Billing and usage documentation now recommends check_and_record_usage(...) for
+  quota-gated product actions instead of the old assert_then_record pattern.
+- Existing environment examples and setup checklist were updated for audit proxy
+  trust configuration.
+
+Verification:
+- Focused privacy/report tests passed: 19 tests.
+- Focused integration/auth/audit tests passed: 43 tests.
+- Focused example product/API contract tests passed: 13 tests.
+- npm run product:check passed.
+- npm run backend:lint passed.
+- npm run frontend:lint passed.
+- npm run frontend:typecheck passed.
+- npm run frontend:test passed.
+- npm run release:check passed, including full backend pytest: 104 tests.
+
+External/not configured:
+- Deploy workflow publish/release/migration steps remain TODO until AWS
+  resources, ECR/ECS choices, domains, and environment secrets are finalized.
+- Docker CLI is still not installed locally, so Docker runtime validation remains
+  static until Docker Desktop is installed.
+- No new markdown documents were created in this phase; only existing docs were
+  updated.
+
+
 Release Candidate Status
 ------------------------
 Template v1 release candidate is ready for local review.

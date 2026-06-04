@@ -1,18 +1,58 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from apps.audit.services import log_audit_event
 from apps.organizations.serializers import OrganizationSerializer
 
 from .serializers import (
+    AccountStatusTokenRefreshSerializer,
     EmailTokenObtainPairSerializer,
     LogoutSerializer,
     RegisterSerializer,
     UserSerializer,
 )
+
+
+def _refresh_cookie_name():
+    return settings.AUTH_REFRESH_COOKIE_NAME
+
+
+def _refresh_cookie_kwargs():
+    return {
+        "path": settings.AUTH_REFRESH_COOKIE_PATH,
+        "domain": settings.AUTH_REFRESH_COOKIE_DOMAIN or None,
+        "secure": settings.AUTH_REFRESH_COOKIE_SECURE,
+        "httponly": True,
+        "samesite": settings.AUTH_REFRESH_COOKIE_SAMESITE,
+    }
+
+
+def _set_refresh_cookie(response, refresh_token):
+    response.set_cookie(
+        _refresh_cookie_name(),
+        str(refresh_token),
+        max_age=int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds()),
+        **_refresh_cookie_kwargs(),
+    )
+
+
+def _delete_refresh_cookie(response):
+    response.delete_cookie(
+        _refresh_cookie_name(),
+        path=settings.AUTH_REFRESH_COOKIE_PATH,
+        domain=settings.AUTH_REFRESH_COOKIE_DOMAIN or None,
+        samesite=settings.AUTH_REFRESH_COOKIE_SAMESITE,
+    )
+
+
+def _mutable_request_data(request):
+    if hasattr(request.data, "copy"):
+        return request.data.copy()
+    return dict(request.data)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -33,7 +73,7 @@ class RegisterView(generics.CreateAPIView):
             request=request,
             category="auth",
         )
-        return Response(
+        response = Response(
             {
                 "user": UserSerializer(user).data,
                 "organization": OrganizationSerializer(
@@ -42,11 +82,12 @@ class RegisterView(generics.CreateAPIView):
                 ).data,
                 "tokens": {
                     "access": str(refresh.access_token),
-                    "refresh": str(refresh),
                 },
             },
             status=status.HTTP_201_CREATED,
         )
+        _set_refresh_cookie(response, refresh)
+        return response
 
 
 class LoginView(TokenObtainPairView):
@@ -56,6 +97,9 @@ class LoginView(TokenObtainPairView):
 
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
+        refresh = response.data.pop("refresh", "")
+        if refresh:
+            _set_refresh_cookie(response, refresh)
         user_id = (
             response.data.get("user", {}).get("id") if isinstance(response.data, dict) else None
         )
@@ -69,11 +113,36 @@ class LoginView(TokenObtainPairView):
         return response
 
 
+class RefreshView(TokenRefreshView):
+    serializer_class = AccountStatusTokenRefreshSerializer
+    throttle_scope = "auth"
+
+    def post(self, request, *args, **kwargs):
+        data = _mutable_request_data(request)
+        if not data.get("refresh"):
+            cookie_refresh = request.COOKIES.get(_refresh_cookie_name())
+            if cookie_refresh:
+                data["refresh"] = cookie_refresh
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        response_data = dict(serializer.validated_data)
+        refresh = response_data.pop("refresh", "")
+        response = Response(response_data, status=status.HTTP_200_OK)
+        if refresh:
+            _set_refresh_cookie(response, refresh)
+        return response
+
+
 class LogoutView(generics.GenericAPIView):
     serializer_class = LogoutSerializer
 
     def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        data = _mutable_request_data(request)
+        if not data.get("refresh"):
+            cookie_refresh = request.COOKIES.get(_refresh_cookie_name())
+            if cookie_refresh:
+                data["refresh"] = cookie_refresh
+        serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         log_audit_event(
@@ -82,7 +151,9 @@ class LogoutView(generics.GenericAPIView):
             request=request,
             category="auth",
         )
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        _delete_refresh_cookie(response)
+        return response
 
 
 class MeView(generics.RetrieveUpdateAPIView):

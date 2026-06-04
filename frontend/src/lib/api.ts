@@ -20,8 +20,13 @@ import type {
   User,
 } from "./types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 const API_PREFIX = "/api/v1";
+const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+export function normalizeApiBaseUrl(value: string) {
+  return value.replace(/\/+$/, "").replace(/\/api\/v1$/, "");
+}
+
+const API_BASE_URL = normalizeApiBaseUrl(RAW_API_BASE_URL);
 
 export class ApiError extends Error {
   status: number;
@@ -68,7 +73,19 @@ type RequestOptions = {
   method?: string;
   token?: string;
   body?: unknown;
+  skipAuthRefresh?: boolean;
 };
+
+type AuthTokenHandlers = {
+  setAccessToken?: (token: string) => void;
+  clearAuth?: () => void;
+};
+
+let authTokenHandlers: AuthTokenHandlers = {};
+
+export function configureAuthTokenHandlers(handlers: AuthTokenHandlers) {
+  authTokenHandlers = handlers;
+}
 
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers();
@@ -82,6 +99,7 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
 
   const response = await fetch(`${API_BASE_URL}${API_PREFIX}${path}`, {
     method: options.method ?? "GET",
+    credentials: "include",
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
@@ -94,6 +112,24 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   const payload = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      options.token &&
+      !options.skipAuthRefresh &&
+      path !== "/auth/refresh/"
+    ) {
+      try {
+        const refreshResponse = await api.refresh();
+        authTokenHandlers.setAccessToken?.(refreshResponse.access);
+        return apiRequest<T>(path, {
+          ...options,
+          token: refreshResponse.access,
+          skipAuthRefresh: true,
+        });
+      } catch {
+        authTokenHandlers.clearAuth?.();
+      }
+    }
     const fieldMessages = flattenPayloadMessages(payload);
     const message = fieldMessages[0] ?? `Request failed with status ${response.status}`;
     throw new ApiError(message, response.status, payload);
@@ -125,11 +161,16 @@ export const api = {
       method: "POST",
       body: payload,
     }),
-  logout: (token: string, refresh: string) =>
+  refresh: () =>
+    apiRequest<{ access: string }>("/auth/refresh/", {
+      method: "POST",
+      body: {},
+    }),
+  logout: (token: string) =>
     apiRequest<void>("/auth/logout/", {
       method: "POST",
       token,
-      body: { refresh },
+      body: {},
     }),
   me: (token: string) => apiRequest<User>("/auth/me/", { token }),
   organizations: (token: string) =>
@@ -199,6 +240,7 @@ export const api = {
     token: string,
     payload: {
       organization_id: number;
+      user_id?: number;
       event: string;
       channel: string;
       is_enabled: boolean;

@@ -17,6 +17,7 @@ SECRET_KEY = env(
     "DJANGO_SECRET_KEY",
     default="unsafe-local-development-key-change-me-before-production",
 )
+INTEGRATION_CREDENTIALS_KEY = env("INTEGRATION_CREDENTIALS_KEY", default=SECRET_KEY)
 DEBUG = env("DJANGO_DEBUG")
 
 ALLOWED_HOSTS = env.list(
@@ -116,6 +117,7 @@ CORS_ALLOWED_ORIGINS = env.list(
     "CORS_ALLOWED_ORIGINS",
     default=["http://localhost:5173", "http://127.0.0.1:5173"],
 )
+CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = env.list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",
     default=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -124,7 +126,7 @@ CSRF_TRUSTED_ORIGINS = env.list(
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.accounts.authentication.AccountStatusJWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
@@ -159,6 +161,11 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
 }
+AUTH_REFRESH_COOKIE_NAME = env("AUTH_REFRESH_COOKIE_NAME", default="saas_core_refresh_token")
+AUTH_REFRESH_COOKIE_PATH = env("AUTH_REFRESH_COOKIE_PATH", default="/api/v1/auth/")
+AUTH_REFRESH_COOKIE_DOMAIN = env("AUTH_REFRESH_COOKIE_DOMAIN", default="")
+AUTH_REFRESH_COOKIE_SECURE = env.bool("AUTH_REFRESH_COOKIE_SECURE", default=not DEBUG)
+AUTH_REFRESH_COOKIE_SAMESITE = env("AUTH_REFRESH_COOKIE_SAMESITE", default="Lax")
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "SaaS Core Template API",
@@ -166,12 +173,33 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "0.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "ENUM_NAME_OVERRIDES": {
+        "UserAccountStatusEnum": "apps.accounts.models.UserAccountStatus.choices",
+        "AuditEventStatusEnum": "apps.audit.models.AuditEventStatus.choices",
         "AIExecutionStrategyEnum": "apps.ai.models.AIExecutionStrategy.choices",
+        "AIProviderStatusEnum": "apps.ai.models.AIProviderStatus.choices",
+        "AICallStatusEnum": "apps.ai.models.AICallStatus.choices",
+        "SubscriptionStatusEnum": "apps.billing.models.SubscriptionStatus.choices",
+        "StripeWebhookEventStatusEnum": "apps.billing.models.StripeWebhookEventStatus.choices",
+        "ProviderAuthTypeEnum": "apps.integrations.models.ProviderAuthType.choices",
+        "ProviderStatusEnum": "apps.integrations.models.ProviderStatus.choices",
+        "IntegrationAccountStatusEnum": "apps.integrations.models.IntegrationAccountStatus.choices",
+        "CredentialTypeEnum": "apps.integrations.models.CredentialType.choices",
+        "SyncLogStatusEnum": "apps.integrations.models.SyncLogStatus.choices",
+        "JobRunStatusEnum": "apps.jobs.models.JobRunStatus.choices",
+        "MembershipRoleEnum": "apps.organizations.models.MembershipRole.choices",
+        "MembershipStatusEnum": "apps.organizations.models.MembershipStatus.choices",
         "NotificationChannelEnum": "apps.notifications.models.NotificationChannel.choices",
+        "NotificationDeliveryStatusEnum": (
+            "apps.notifications.models.NotificationDeliveryStatus.choices"
+        ),
         "NotificationEventEnum": "apps.notifications.models.NotificationEvent.choices",
         "ReportFormatEnum": "apps.reports.models.ReportFormat.choices",
+        "ReportStatusEnum": "apps.reports.models.ReportStatus.choices",
         "PrivacyRequestStatusEnum": "apps.privacy.models.PrivacyRequestStatus.choices",
         "DataExportScopeEnum": "apps.privacy.models.DataExportScope.choices",
+        "ExampleInsightStatusEnum": (
+            "apps.products.example_insights.models.ExampleInsightStatus.choices"
+        ),
     },
 }
 
@@ -187,6 +215,9 @@ HEALTHCHECK_REQUIRE_REDIS = env.bool("HEALTHCHECK_REQUIRE_REDIS", default=False)
 HEALTHCHECK_REDIS_URL = env("HEALTHCHECK_REDIS_URL", default=REDIS_URL)
 
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:5173")
+BILLING_ALLOWED_REDIRECT_HOSTS = env.list("BILLING_ALLOWED_REDIRECT_HOSTS", default=[])
+MAX_JSON_PAYLOAD_BYTES = env.int("MAX_JSON_PAYLOAD_BYTES", default=65536)
+AUDIT_TRUST_X_FORWARDED_FOR = env.bool("AUDIT_TRUST_X_FORWARDED_FOR", default=False)
 
 STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", default="")
 STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", default="")

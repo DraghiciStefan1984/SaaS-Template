@@ -8,13 +8,14 @@ import { StatusBadge } from "../components/StatusBadge";
 import { api, getApiErrorMessage, listResults } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatDate } from "../lib/format";
-import { useWorkspace } from "../lib/workspace";
+import { isOrganizationAdmin, useWorkspace } from "../lib/workspace";
 
 export function AIPage() {
   const queryClient = useQueryClient();
   const { accessToken } = useAuth();
   const { selectedOrganization } = useWorkspace();
   const organizationId = selectedOrganization?.id;
+  const canViewDecisionLogs = isOrganizationAdmin(selectedOrganization);
   const [taskKey, setTaskKey] = useState("table_analysis");
   const [strategyMode, setStrategyMode] = useState("can_use_classic_ml");
 
@@ -29,7 +30,7 @@ export function AIPage() {
     queryFn: () => api.aiTaskProfiles(accessToken),
   });
   const decisionLogsQuery = useQuery({
-    enabled: Boolean(accessToken && organizationId),
+    enabled: Boolean(accessToken && organizationId && canViewDecisionLogs),
     queryKey: ["ai-decision-logs", organizationId],
     queryFn: () => api.aiDecisionLogs(accessToken, organizationId!),
   });
@@ -47,9 +48,10 @@ export function AIPage() {
         organization_id: organizationId!,
         task_key: taskKey,
         input_payload: { sample: true, rows: 1000 },
-        constraints: {
-          [strategyMode]: true,
-        },
+        constraints:
+          strategyMode === "cost_sensitivity"
+            ? { cost_sensitivity: "high" }
+            : { [strategyMode]: true },
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ai-decision-logs", organizationId] });
@@ -84,7 +86,7 @@ export function AIPage() {
             <option value="can_solve_without_ai">Deterministic</option>
             <option value="can_use_classic_ml">Classic ML</option>
             <option value="can_use_local_model">Local model</option>
-            <option value="requires_advanced_reasoning">Advanced reasoning</option>
+            <option value="cost_sensitivity">Cost sensitive</option>
           </select>
           <button
             className="primary-button"
@@ -97,10 +99,14 @@ export function AIPage() {
         </form>
       </PageHeader>
 
-      {providersQuery.isLoading || taskProfilesQuery.isLoading || decisionLogsQuery.isLoading ? (
+      {providersQuery.isLoading ||
+      taskProfilesQuery.isLoading ||
+      (canViewDecisionLogs && decisionLogsQuery.isLoading) ? (
         <LoadingState title="Loading AI data" />
       ) : null}
-      {providersQuery.isError || taskProfilesQuery.isError || decisionLogsQuery.isError ? (
+      {providersQuery.isError ||
+      taskProfilesQuery.isError ||
+      (canViewDecisionLogs && decisionLogsQuery.isError) ? (
         <ErrorState title="AI data unavailable" />
       ) : null}
       {executionPlanMutation.isError ? (

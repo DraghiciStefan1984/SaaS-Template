@@ -8,7 +8,10 @@ from apps.organizations.models import MembershipStatus, Organization
 from apps.organizations.permissions import require_membership
 
 from .models import ExampleInsightRequest
-from .serializers import ExampleInsightCreateSerializer, ExampleInsightRequestSerializer
+from .serializers import (
+    ExampleInsightCreateSerializer,
+    ExampleInsightRequestSummarySerializer,
+)
 
 
 def get_member_organization(user, organization_id):
@@ -25,7 +28,7 @@ def get_member_organization(user, organization_id):
 
 class ExampleInsightRequestListCreateView(generics.ListCreateAPIView):
     queryset = ExampleInsightRequest.objects.none()
-    serializer_class = ExampleInsightRequestSerializer
+    serializer_class = ExampleInsightRequestSummarySerializer
     throttle_scope = "product_write"
 
     @extend_schema(
@@ -38,14 +41,14 @@ class ExampleInsightRequestListCreateView(generics.ListCreateAPIView):
             )
         ],
         request=ExampleInsightCreateSerializer,
-        responses=ExampleInsightRequestSerializer,
+        responses=ExampleInsightRequestSummarySerializer,
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
     @extend_schema(
         request=ExampleInsightCreateSerializer,
-        responses=ExampleInsightRequestSerializer,
+        responses=ExampleInsightRequestSummarySerializer,
     )
     def post(self, request, *args, **kwargs):
         serializer = ExampleInsightCreateSerializer(data=request.data)
@@ -72,7 +75,7 @@ class ExampleInsightRequestListCreateView(generics.ListCreateAPIView):
             },
         )
         return Response(
-            ExampleInsightRequestSerializer(insight_request).data,
+            ExampleInsightRequestSummarySerializer(insight_request).data,
             status=status.HTTP_201_CREATED,
         )
 

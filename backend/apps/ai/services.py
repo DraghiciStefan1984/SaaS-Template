@@ -44,6 +44,13 @@ DEFAULT_AI_LADDER = (
 )
 
 HIGH_VOLUME_RUN_THRESHOLD = 500
+PUBLIC_CONSTRAINT_KEYS = {
+    "can_use_deterministic",
+    "can_solve_without_ai",
+    "can_use_classic_ml",
+    "can_use_local_model",
+    "cost_sensitivity",
+}
 
 
 class AIProviderNotConfigured(APIException):
@@ -103,6 +110,17 @@ def normalize_strategy(value):
     if value not in AIExecutionStrategy.values:
         raise ValidationError({"strategy": f"Unsupported AI execution strategy: {value}"})
     return value
+
+
+def sanitize_constraints(constraints, trusted=False):
+    constraints = constraints or {}
+    if trusted:
+        return constraints
+    return {
+        key: value
+        for key, value in constraints.items()
+        if key in PUBLIC_CONSTRAINT_KEYS
+    }
 
 
 def normalize_allowed_strategies(profile, constraints=None):
@@ -252,8 +270,9 @@ def select_ai_execution_plan(
     constraints=None,
     metadata=None,
     log_decision=True,
+    trusted_constraints=False,
 ):
-    constraints = constraints or {}
+    constraints = sanitize_constraints(constraints, trusted=trusted_constraints)
     metadata = metadata or {}
     profile = AITaskProfile.objects.filter(key=task_key, is_active=True).first()
     if profile is None:

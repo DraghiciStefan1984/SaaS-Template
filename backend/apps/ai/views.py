@@ -1,12 +1,16 @@
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
-from rest_framework import generics
+from rest_framework import generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.audit.services import log_audit_event
 from apps.organizations.models import MembershipStatus, Organization
-from apps.organizations.permissions import require_membership
+from apps.organizations.permissions import (
+    ADMIN_ROLES,
+    require_membership,
+    require_organization_role,
+)
 
 from .models import (
     AICallLog,
@@ -50,6 +54,7 @@ class AIProviderListView(generics.ListAPIView):
 
 
 class PromptTemplateListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAdminUser]
     serializer_class = PromptTemplateSerializer
 
     def get_queryset(self):
@@ -64,6 +69,7 @@ class AITaskProfileListView(generics.ListAPIView):
 
 
 class AIModelPolicyListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAdminUser]
     serializer_class = AIModelPolicySerializer
 
     @extend_schema(
@@ -152,6 +158,7 @@ class AIModelDecisionLogListView(generics.ListAPIView):
             self.request.user,
             self.request.query_params.get("organization_id"),
         )
+        require_organization_role(self.request.user, organization, ADMIN_ROLES)
         return (
             AIModelDecisionLog.objects.filter(organization=organization)
             .select_related(
@@ -190,6 +197,7 @@ class AICallLogListView(generics.ListAPIView):
             self.request.user,
             self.request.query_params.get("organization_id"),
         )
+        require_organization_role(self.request.user, organization, ADMIN_ROLES)
         return (
             AICallLog.objects.filter(organization=organization)
             .select_related("provider", "prompt_template", "user")

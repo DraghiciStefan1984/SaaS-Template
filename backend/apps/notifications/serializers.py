@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.common.serializers import validate_json_payload_size
+
 from .models import (
     NotificationChannel,
     NotificationDeliveryLog,
@@ -31,7 +33,7 @@ class NotificationPreferenceUpsertSerializer(serializers.Serializer):
     event = serializers.ChoiceField(choices=NotificationEvent.values)
     channel = serializers.ChoiceField(choices=NotificationChannel.values)
     is_enabled = serializers.BooleanField(default=True)
-    config = serializers.JSONField(required=False)
+    config = serializers.JSONField(required=False, validators=[validate_json_payload_size])
 
 
 class NotificationDeliveryLogSerializer(serializers.ModelSerializer):

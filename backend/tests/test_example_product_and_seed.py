@@ -14,6 +14,7 @@ from apps.notifications.models import (
     NotificationDeliveryStatus,
     NotificationPreference,
 )
+from apps.organizations.models import Membership, MembershipRole, MembershipStatus
 from apps.organizations.services import create_organization_for_owner
 from apps.products.example_insights.models import ExampleInsightRequest
 from apps.reports.models import Report
@@ -51,7 +52,7 @@ def test_example_insight_endpoint_creates_full_template_workflow(django_user_mod
     assert response.status_code == 201
     body = response.json()
     assert body["status"] == "planned"
-    assert body["ai_execution_plan"]["strategy"] == "classic_ml"
+    assert body["strategy"] == "classic_ml"
     assert body["report"] == Report.objects.get().id
     assert body["job_run"] == JobRun.objects.get().id
     assert AIModelDecisionLog.objects.filter(
@@ -65,6 +66,37 @@ def test_example_insight_endpoint_creates_full_template_workflow(django_user_mod
         product_scope="example_insights",
     ).exists()
     assert feature_enabled_for_organization(organization, "example_insights") is True
+
+
+def test_example_insight_endpoint_ignores_client_forced_ai_strategy(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        "/api/v1/products/example-insights/requests/",
+        {
+            "organization_id": organization.id,
+            "title": "Revenue Trend",
+            "input_payload": {"rows": [{"month": "January", "revenue": 1000}]},
+            "constraints": {
+                "force_strategy": "advanced_llm",
+                "requires_advanced_reasoning": True,
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["strategy"] == "classic_ml"
+    decision_log = AIModelDecisionLog.objects.filter(
+        organization=organization,
+        selected_strategy="classic_ml",
+    ).first()
+    assert decision_log is not None
+    assert "force_strategy" not in decision_log.constraints
 
 
 def test_example_insight_endpoint_respects_plan_feature_flag(django_user_model):
@@ -120,6 +152,41 @@ def test_example_insight_requests_are_organization_scoped(django_user_model):
     assert response.status_code == 200
     assert response.json()["count"] == 1
     assert response.json()["results"][0]["title"] == "Owner Insight"
+
+
+def test_example_insight_request_list_uses_safe_summary_for_members(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    member = make_user(django_user_model, email="member@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    Membership.objects.create(
+        organization=organization,
+        user=member,
+        role=MembershipRole.MEMBER,
+        status=MembershipStatus.ACTIVE,
+    )
+    ExampleInsightRequest.objects.create(
+        organization=organization,
+        created_by=owner,
+        title="Sensitive Insight",
+        input_payload={"private": "input"},
+        constraints={"private": "constraints"},
+        ai_execution_plan={"strategy": "classic_ml", "private": "plan"},
+        error_message="provider details",
+    )
+    client = APIClient()
+    client.force_authenticate(member)
+
+    response = client.get(
+        f"/api/v1/products/example-insights/requests/?organization_id={organization.id}"
+    )
+
+    assert response.status_code == 200
+    body = response.json()["results"][0]
+    assert body["strategy"] == "classic_ml"
+    assert "input_payload" not in body
+    assert "constraints" not in body
+    assert "ai_execution_plan" not in body
+    assert "error_message" not in body
 
 
 def test_seed_dev_data_is_idempotent(django_user_model):

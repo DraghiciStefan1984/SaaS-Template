@@ -7,12 +7,13 @@ import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatLimit } from "../lib/format";
-import { useWorkspace } from "../lib/workspace";
+import { isOrganizationAdmin, useWorkspace } from "../lib/workspace";
 
 export function BillingPage() {
   const { accessToken } = useAuth();
   const { selectedOrganization } = useWorkspace();
   const organizationId = selectedOrganization?.id;
+  const canInspectBillingProvider = isOrganizationAdmin(selectedOrganization);
 
   const plansQuery = useQuery({
     queryKey: ["plans"],
@@ -57,10 +58,12 @@ export function BillingPage() {
               <dt>Cancel at period end</dt>
               <dd>{subscriptionQuery.data?.cancel_at_period_end ? "Yes" : "No"}</dd>
             </div>
-            <div>
-              <dt>Stripe customer</dt>
-              <dd>{subscriptionQuery.data?.stripe_customer_id ? "Connected" : "Not connected"}</dd>
-            </div>
+            {canInspectBillingProvider ? (
+              <div>
+                <dt>Stripe customer</dt>
+                <dd>{subscriptionQuery.data?.stripe_customer_id ? "Connected" : "Not connected"}</dd>
+              </div>
+            ) : null}
           </dl>
         </div>
 

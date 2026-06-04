@@ -25,6 +25,7 @@ from .serializers import (
     PlanSerializer,
     StripeWebhookResponseSerializer,
     SubscriptionSerializer,
+    SubscriptionSummarySerializer,
 )
 from .services import (
     construct_stripe_event,
@@ -69,9 +70,14 @@ class SubscriptionView(OrganizationBillingMixin, APIView):
     )
     def get(self, request):
         organization = self.get_user_organization(request.query_params.get("organization_id"))
-        require_membership(request.user, organization)
+        membership = require_membership(request.user, organization)
         subscription = get_subscription_for_organization(organization)
-        return Response(SubscriptionSerializer(subscription).data)
+        serializer_class = (
+            SubscriptionSerializer
+            if membership.role in ADMIN_ROLES
+            else SubscriptionSummarySerializer
+        )
+        return Response(serializer_class(subscription).data)
 
 
 class CheckoutView(OrganizationBillingMixin, APIView):

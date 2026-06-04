@@ -119,7 +119,7 @@ class IntegrationSyncLogListView(OrganizationScopedMixin, generics.ListAPIView):
             return IntegrationSyncLog.objects.none()
 
         account = self.get_user_integration_account(self.kwargs["account_id"])
-        require_membership(self.request.user, account.organization)
+        require_organization_role(self.request.user, account.organization, ADMIN_ROLES)
         return IntegrationSyncLog.objects.filter(integration_account=account).order_by(
             "-created_at",
             "-id",

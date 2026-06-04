@@ -3,7 +3,9 @@ from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
+from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import UserAccountStatus
@@ -70,12 +72,30 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+class AccountStatusTokenRefreshSerializer(TokenRefreshSerializer):
+    def validate(self, attrs):
+        try:
+            refresh = self.token_class(attrs["refresh"])
+        except TokenError as error:
+            raise InvalidToken(str(error)) from error
+        user_id = refresh.get(api_settings.USER_ID_CLAIM)
+        user = User.objects.filter(id=user_id).first()
+        if user is None or user.account_status != UserAccountStatus.ACTIVE:
+            raise AuthenticationFailed("This account is not active.")
+        return super().validate(attrs)
+
+
 class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
+    refresh = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
-        self.token = RefreshToken(attrs["refresh"])
+        refresh = attrs.get("refresh", "")
+        try:
+            self.token = RefreshToken(refresh) if refresh else None
+        except TokenError:
+            self.token = None
         return attrs
 
     def save(self, **kwargs):
-        self.token.blacklist()
+        if self.token:
+            self.token.blacklist()

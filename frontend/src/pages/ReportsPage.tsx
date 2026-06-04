@@ -8,13 +8,14 @@ import { StatusBadge } from "../components/StatusBadge";
 import { api, getApiErrorMessage, listResults } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatDate } from "../lib/format";
-import { useWorkspace } from "../lib/workspace";
+import { isOrganizationAdmin, useWorkspace } from "../lib/workspace";
 
 export function ReportsPage() {
   const queryClient = useQueryClient();
   const { accessToken } = useAuth();
   const { selectedOrganization } = useWorkspace();
   const organizationId = selectedOrganization?.id;
+  const canViewJobs = isOrganizationAdmin(selectedOrganization);
   const [title, setTitle] = useState("Weekly KPI Summary");
   const [templateKey, setTemplateKey] = useState("weekly_summary");
 
@@ -29,7 +30,7 @@ export function ReportsPage() {
     queryFn: () => api.reports(accessToken, organizationId!),
   });
   const jobsQuery = useQuery({
-    enabled: Boolean(accessToken && organizationId),
+    enabled: Boolean(accessToken && organizationId && canViewJobs),
     queryKey: ["jobs", organizationId],
     queryFn: () => api.jobs(accessToken, organizationId!),
   });
@@ -100,10 +101,10 @@ export function ReportsPage() {
         </form>
       </PageHeader>
 
-      {templatesQuery.isLoading || reportsQuery.isLoading || jobsQuery.isLoading ? (
+      {templatesQuery.isLoading || reportsQuery.isLoading || (canViewJobs && jobsQuery.isLoading) ? (
         <LoadingState title="Loading report workflow" />
       ) : null}
-      {templatesQuery.isError || reportsQuery.isError || jobsQuery.isError ? (
+      {templatesQuery.isError || reportsQuery.isError || (canViewJobs && jobsQuery.isError) ? (
         <ErrorState title="Report workflow unavailable" />
       ) : null}
       {createReportMutation.isError ? (

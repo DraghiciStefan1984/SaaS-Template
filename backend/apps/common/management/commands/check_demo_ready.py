@@ -168,7 +168,7 @@ class Command(BaseCommand):
         )
         self._require(insight_request is not None, "Seeded example product request was not found.")
         self._require(
-            insight_request.get("ai_execution_plan", {}).get("strategy") == "classic_ml",
+            insight_request.get("strategy") == "classic_ml",
             "Seeded example product request should use classic_ml.",
         )
         checks.append("example product request")

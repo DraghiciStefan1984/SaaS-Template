@@ -2,6 +2,7 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import generics, status
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.audit.services import log_audit_event
 from apps.organizations.models import MembershipStatus, Organization
@@ -14,7 +15,11 @@ from .serializers import (
     DataExportCreateSerializer,
     DataExportRequestSerializer,
 )
-from .services import create_data_deletion_request, create_data_export_request
+from .services import (
+    create_data_deletion_request,
+    create_data_export_request,
+    execute_data_deletion_request,
+)
 
 
 def get_member_organization(user, organization_id):
@@ -151,3 +156,26 @@ class DataDeletionRequestListCreateView(generics.ListCreateAPIView):
         return DataDeletionRequest.objects.filter(organization=organization).select_related(
             "requested_by"
         )
+
+
+class DataDeletionRequestExecuteView(APIView):
+    throttle_scope = "product_write"
+
+    @extend_schema(request=None, responses=DataDeletionRequestSerializer)
+    def post(self, request, request_id):
+        deletion_request = get_object_or_404(
+            DataDeletionRequest.objects.select_related("organization", "requested_by"),
+            id=request_id,
+        )
+        require_organization_role(request.user, deletion_request.organization, OWNER_ROLES)
+        deletion_request = execute_data_deletion_request(deletion_request)
+        log_audit_event(
+            action="privacy.deletion.executed",
+            organization=deletion_request.organization,
+            request=request,
+            category="privacy",
+            target_entity_type="data_deletion_request",
+            target_entity_id=deletion_request.id,
+            metadata={"target": deletion_request.target, "status": deletion_request.status},
+        )
+        return Response(DataDeletionRequestSerializer(deletion_request).data)

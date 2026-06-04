@@ -37,15 +37,23 @@ The `usage` app tracks usage by:
 
 Reusable services:
 
+- `check_and_record_usage(...)`
 - `record_usage(...)`
 - `get_usage_total(...)`
 - `get_plan_limit(...)`
 - `assert_within_usage_limit(...)`
 - `usage_summary_for_organization(...)`
 
-Any paid or limited product action should call `assert_within_usage_limit(...)`
-before doing expensive work, then call `record_usage(...)` after successful
-completion.
+Any paid or limited product action should reserve usage with
+`check_and_record_usage(...)` before doing expensive work. That service checks
+the current plan limit and writes the usage record inside one transaction, which
+avoids the old read-then-write race between `assert_within_usage_limit(...)` and
+`record_usage(...)`.
+
+Use `record_usage(...)` only for internal reconciliation or events that are not
+quota-gated. `assert_within_usage_limit(...)` remains available for read-only UI
+previews, but product endpoints should not pair it manually with
+`record_usage(...)`.
 
 ## Stripe Placeholders
 
@@ -61,4 +69,3 @@ actions return a descriptive `503` response.
 Webhook signature verification is implemented and tested with a local test
 secret. When a real Stripe account exists, configure per-environment webhook
 secrets and price IDs before enabling live billing.
-

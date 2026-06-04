@@ -11,6 +11,13 @@ class SubscriptionStatus(models.TextChoices):
     INCOMPLETE = "incomplete", "Incomplete"
 
 
+class StripeWebhookEventStatus(models.TextChoices):
+    PROCESSING = "processing", "Processing"
+    PROCESSED = "processed", "Processed"
+    SKIPPED = "skipped", "Skipped"
+    FAILED = "failed", "Failed"
+
+
 class Plan(models.Model):
     name = models.CharField(max_length=120)
     slug = models.SlugField(unique=True)
@@ -86,3 +93,26 @@ class Subscription(models.Model):
             SubscriptionStatus.ACTIVE,
         }
 
+
+class StripeWebhookEvent(models.Model):
+    event_id = models.CharField(max_length=255, unique=True)
+    event_type = models.CharField(max_length=120, blank=True)
+    status = models.CharField(
+        max_length=30,
+        choices=StripeWebhookEventStatus.choices,
+        default=StripeWebhookEventStatus.PROCESSING,
+    )
+    error_message = models.TextField(blank=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["event_id"]),
+            models.Index(fields=["event_type", "status"]),
+        ]
+
+    def __str__(self):
+        return self.event_id

@@ -2,11 +2,15 @@ from calendar import monthrange
 from datetime import date
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import APIException
 
-from apps.billing.services import get_subscription_for_organization
+from apps.billing.services import (
+    get_effective_plan_for_organization,
+    get_subscription_for_organization,
+)
 
 from .models import UsageRecord
 
@@ -48,10 +52,10 @@ def get_usage_total(
 
 
 def get_plan_limit(organization, metric_name):
-    subscription = get_subscription_for_organization(organization)
-    if subscription is None or subscription.plan is None:
+    plan = get_effective_plan_for_organization(organization)
+    if plan is None:
         return None
-    return subscription.plan.limit_for(metric_name)
+    return plan.limit_for(metric_name)
 
 
 def record_usage(
@@ -74,6 +78,52 @@ def record_usage(
         period_end=period_end,
         metric_name=metric_name,
         quantity=Decimal(str(quantity)),
+        source=source,
+        product_scope=product_scope,
+        metadata=metadata or {},
+    )
+
+
+@transaction.atomic
+def check_and_record_usage(
+    organization,
+    metric_name,
+    quantity=1,
+    source="",
+    product_scope="",
+    metadata=None,
+    period_start=None,
+    period_end=None,
+):
+    from apps.organizations.models import Organization
+
+    locked_organization = Organization.objects.select_for_update().get(id=organization.id)
+    requested = Decimal(str(quantity))
+    limit = get_plan_limit(locked_organization, metric_name)
+    if period_start is None or period_end is None:
+        period_start, period_end = current_month_period()
+
+    if limit is not None:
+        current_usage = get_usage_total(
+            locked_organization,
+            metric_name,
+            period_start=period_start,
+            period_end=period_end,
+            product_scope=product_scope,
+        )
+        if current_usage + requested > Decimal(str(limit)):
+            raise UsageLimitExceeded(
+                f"Plan limit exceeded for '{metric_name}'. "
+                f"Limit: {limit}; current usage: {current_usage}."
+            )
+
+    return UsageRecord.objects.create(
+        organization=locked_organization,
+        subscription=get_subscription_for_organization(locked_organization),
+        period_start=period_start,
+        period_end=period_end,
+        metric_name=metric_name,
+        quantity=requested,
         source=source,
         product_scope=product_scope,
         metadata=metadata or {},
@@ -106,10 +156,13 @@ def usage_summary_for_organization(organization):
     subscription = get_subscription_for_organization(organization)
     if subscription is None:
         return {"plan": None, "period": None, "metrics": []}
+    effective_plan = get_effective_plan_for_organization(organization)
+    if effective_plan is None:
+        return {"plan": None, "period": None, "metrics": []}
 
     period_start, period_end = current_month_period()
     metrics = []
-    for metric_name, limit in subscription.plan.limits.items():
+    for metric_name, limit in effective_plan.limits.items():
         used = get_usage_total(
             organization,
             metric_name,
@@ -126,8 +179,8 @@ def usage_summary_for_organization(organization):
 
     return {
         "plan": {
-            "slug": subscription.plan.slug,
-            "name": subscription.plan.name,
+            "slug": effective_plan.slug,
+            "name": effective_plan.name,
             "status": subscription.status,
         },
         "period": {

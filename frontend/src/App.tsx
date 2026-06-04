@@ -26,7 +26,7 @@ const queryClient = new QueryClient({
 });
 
 function ProtectedWorkspace() {
-  const { accessToken, isAuthenticated } = useAuth();
+  const { accessToken, isAuthenticated, isBootstrapping } = useAuth();
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<number | null>(null);
 
   const organizationsQuery = useQuery({
@@ -47,16 +47,16 @@ function ProtectedWorkspace() {
     [organizations, selectedOrganizationId],
   );
 
-  if (!isAuthenticated) {
-    return <Navigate replace to="/auth" />;
-  }
-
-  if (organizationsQuery.isLoading) {
+  if (isBootstrapping || organizationsQuery.isLoading) {
     return (
       <main className="center-layout">
         <LoadingState title="Loading organizations" />
       </main>
     );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate replace to="/auth" />;
   }
 
   if (organizationsQuery.isError) {

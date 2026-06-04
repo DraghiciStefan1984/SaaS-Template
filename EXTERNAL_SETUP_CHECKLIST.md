@@ -43,6 +43,7 @@ Needed:
 
 GitHub secrets/vars to add later:
 - `DJANGO_SECRET_KEY`
+- `INTEGRATION_CREDENTIALS_KEY`
 - `DATABASE_URL`
 - `REDIS_URL`
 - `CELERY_BROKER_URL`
@@ -55,6 +56,14 @@ GitHub secrets/vars to add later:
 - `DJANGO_CSRF_TRUSTED_ORIGINS`
 - `CORS_ALLOWED_ORIGINS`
 - `FRONTEND_BASE_URL`
+- `AUTH_REFRESH_COOKIE_NAME`
+- `AUTH_REFRESH_COOKIE_PATH`
+- `AUTH_REFRESH_COOKIE_DOMAIN`
+- `AUTH_REFRESH_COOKIE_SECURE`
+- `AUTH_REFRESH_COOKIE_SAMESITE`
+- `AUDIT_TRUST_X_FORWARDED_FOR`
+- `BILLING_ALLOWED_REDIRECT_HOSTS`
+- `MAX_JSON_PAYLOAD_BYTES`
 - `AWS_REGION`
 - `DEFAULT_AI_PROVIDER`
 - `EMAIL_PROVIDER`
@@ -92,10 +101,23 @@ Values to prepare:
 - `DJANGO_CSRF_TRUSTED_ORIGINS`
 - `CORS_ALLOWED_ORIGINS`
 - `FRONTEND_BASE_URL`
+- `AUTH_REFRESH_COOKIE_NAME`
+- `AUTH_REFRESH_COOKIE_PATH`
+- `AUTH_REFRESH_COOKIE_DOMAIN`
+- `AUTH_REFRESH_COOKIE_SECURE`
+- `AUTH_REFRESH_COOKIE_SAMESITE`
+- `AUDIT_TRUST_X_FORWARDED_FOR`
+- `BILLING_ALLOWED_REDIRECT_HOSTS`
+- `MAX_JSON_PAYLOAD_BYTES`
 
 Important:
 - Prefer IAM roles and GitHub OIDC over long-lived AWS access keys.
 - If access keys are temporarily needed, keep them out of the repo.
+- Generate `INTEGRATION_CREDENTIALS_KEY` separately from `DJANGO_SECRET_KEY`.
+  Rotating the Django secret should not make stored provider credentials
+  undecryptable.
+- Keep `AUDIT_TRUST_X_FORWARDED_FOR=false` until direct backend access is blocked
+  and the load balancer/proxy strips client-supplied forwarding headers.
 
 ### Domain/DNS
 
@@ -109,10 +131,12 @@ Needed:
 
 Example target values:
 - Frontend: `https://app.example.com`
-- API: `https://api.example.com/api/v1`
+- API origin: `https://api.example.com`
 
 Frontend env:
-- `VITE_API_BASE_URL`
+- `VITE_API_BASE_URL` should point to the API origin. The frontend client adds
+  `/api/v1` itself and also tolerates existing values that already include the
+  prefix.
 - `VITE_PUBLIC_SITE_URL`
 
 Backend env:
@@ -120,6 +144,13 @@ Backend env:
 - `DJANGO_CSRF_TRUSTED_ORIGINS`
 - `CORS_ALLOWED_ORIGINS`
 - `FRONTEND_BASE_URL`
+- `AUTH_REFRESH_COOKIE_NAME`
+- `AUTH_REFRESH_COOKIE_PATH`
+- `AUTH_REFRESH_COOKIE_DOMAIN`
+- `AUTH_REFRESH_COOKIE_SECURE`
+- `AUTH_REFRESH_COOKIE_SAMESITE`
+- `AUDIT_TRUST_X_FORWARDED_FOR`
+- `BILLING_ALLOWED_REDIRECT_HOSTS`
 
 ## Needed For Billing
 

@@ -2,6 +2,9 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.privacy.models import DataDeletionTarget
+from apps.privacy.services import create_data_deletion_request, execute_data_deletion_request
+
 from .models import MembershipStatus, Organization
 from .permissions import ADMIN_ROLES, OWNER_ROLES, require_organization_role
 from .serializers import InviteMemberSerializer, MembershipSerializer, OrganizationSerializer
@@ -31,7 +34,15 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         organization = self.get_object()
         require_organization_role(request.user, organization, OWNER_ROLES)
-        return super().destroy(request, *args, **kwargs)
+        deletion_request = create_data_deletion_request(
+            organization=organization,
+            requested_by=request.user,
+            target=DataDeletionTarget.ORGANIZATION,
+            reason="Organization deleted through the API.",
+            metadata={"source": "organization_destroy"},
+        )
+        execute_data_deletion_request(deletion_request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"])
     def members(self, request, pk=None):

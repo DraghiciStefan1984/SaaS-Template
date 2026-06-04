@@ -1,3 +1,5 @@
+from django.conf import settings
+
 from .models import AuditEventStatus, AuditLog
 
 
@@ -5,7 +7,7 @@ def get_request_ip_address(request):
     if request is None:
         return None
     forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded_for:
+    if settings.AUDIT_TRUST_X_FORWARDED_FOR and forwarded_for:
         return forwarded_for.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR")
 

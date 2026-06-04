@@ -121,26 +121,54 @@ class ${pascal}Request(models.Model):
     },
     {
       path: join(productDir, "services.py"),
-      content: `from .models import ${pascal}Request
+      content: `from django.db import transaction
+
+from apps.billing.services import assert_feature_enabled
+from apps.usage.services import check_and_record_usage
+
+from .models import ${pascal}Request
+
+${snake.toUpperCase()}_FEATURE = "${snake}"
+${snake.toUpperCase()}_PRODUCT_SCOPE = "${snake}"
+${snake.toUpperCase()}_USAGE_METRIC = "${snake}_requests"
 
 
+@transaction.atomic
 def create_${snake}_request(*, organization, created_by, title, input_payload=None):
+    input_payload = input_payload or {}
     # TODO(product): Decide first whether this product can be solved with
     # deterministic code, classic ML/DL, or a low-cost model before adding any
     # external AI provider call.
     # TODO(api-key): Route future provider calls through a dedicated service
     # module and configure keys through environment secrets only.
-    return ${pascal}Request.objects.create(
+    # TODO(billing): Add this product feature flag and usage metric to plan seed
+    # migrations before exposing the endpoint outside local development.
+    # TODO(privacy): Add product records to privacy export and anonymization
+    # hooks before storing customer payloads in production.
+    assert_feature_enabled(organization, ${snake.toUpperCase()}_FEATURE)
+    usage_record = check_and_record_usage(
+        organization,
+        ${snake.toUpperCase()}_USAGE_METRIC,
+        source="${snake}.create_request",
+        product_scope=${snake.toUpperCase()}_PRODUCT_SCOPE,
+        metadata={"status": "reserved"},
+    )
+    product_request = ${pascal}Request.objects.create(
         organization=organization,
         created_by=created_by,
         title=title,
-        input_payload=input_payload or {},
+        input_payload=input_payload,
     )
+    usage_record.metadata = {"request_id": product_request.id}
+    usage_record.save(update_fields=["metadata"])
+    return product_request
 `,
     },
     {
       path: join(productDir, "serializers.py"),
       content: `from rest_framework import serializers
+
+from apps.common.serializers import validate_json_payload_size
 
 from .models import ${pascal}Request
 from .services import create_${snake}_request
@@ -164,10 +192,25 @@ class ${pascal}RequestSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class ${pascal}RequestSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ${pascal}Request
+        fields = (
+            "id",
+            "organization",
+            "created_by",
+            "title",
+            "status",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
 class ${pascal}CreateSerializer(serializers.Serializer):
     organization_id = serializers.IntegerField()
     title = serializers.CharField(max_length=240)
-    input_payload = serializers.JSONField(required=False)
+    input_payload = serializers.JSONField(required=False, validators=[validate_json_payload_size])
 
     def create(self, validated_data):
         return create_${snake}_request(
@@ -190,7 +233,7 @@ from apps.organizations.models import MembershipStatus, Organization
 from apps.organizations.permissions import require_membership
 
 from .models import ${pascal}Request
-from .serializers import ${pascal}CreateSerializer, ${pascal}RequestSerializer
+from .serializers import ${pascal}CreateSerializer, ${pascal}RequestSummarySerializer
 
 
 def get_member_organization(user, organization_id):
@@ -207,7 +250,7 @@ def get_member_organization(user, organization_id):
 
 class ${pascal}RequestListCreateView(generics.ListCreateAPIView):
     queryset = ${pascal}Request.objects.none()
-    serializer_class = ${pascal}RequestSerializer
+    serializer_class = ${pascal}RequestSummarySerializer
     throttle_scope = "product_write"
 
     @extend_schema(
@@ -220,12 +263,12 @@ class ${pascal}RequestListCreateView(generics.ListCreateAPIView):
             )
         ],
         request=${pascal}CreateSerializer,
-        responses=${pascal}RequestSerializer,
+        responses=${pascal}RequestSummarySerializer,
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
-    @extend_schema(request=${pascal}CreateSerializer, responses=${pascal}RequestSerializer)
+    @extend_schema(request=${pascal}CreateSerializer, responses=${pascal}RequestSummarySerializer)
     def post(self, request, *args, **kwargs):
         serializer = ${pascal}CreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -243,7 +286,7 @@ class ${pascal}RequestListCreateView(generics.ListCreateAPIView):
             target_entity_id=product_request.id,
         )
         return Response(
-            ${pascal}RequestSerializer(product_request).data,
+            ${pascal}RequestSummarySerializer(product_request).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -333,7 +376,9 @@ try {
   const files = productFiles(options);
   writeProductFiles(files, options);
   if (!options.dryRun) {
-    console.log("Next: register the Django app, include its URL, run makemigrations, and add UI routing.");
+    console.log(
+      "Next: register the Django app, include its URL, add plan feature/limit seeds, run makemigrations, and add UI routing.",
+    );
   }
 } catch (error) {
   console.error(error.message);

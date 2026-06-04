@@ -4,12 +4,13 @@ import { Navigate, useNavigate } from "react-router-dom";
 
 import { getApiErrorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { LoadingState } from "../components/StateBlock";
 
 type AuthMode = "login" | "register";
 
 export function AuthPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, login, register } = useAuth();
+  const { isAuthenticated, isBootstrapping, login, register } = useAuth();
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,6 +18,14 @@ export function AuthPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (isBootstrapping) {
+    return (
+      <main className="center-layout">
+        <LoadingState title="Loading session" />
+      </main>
+    );
+  }
 
   if (isAuthenticated) {
     return <Navigate replace to="/" />;

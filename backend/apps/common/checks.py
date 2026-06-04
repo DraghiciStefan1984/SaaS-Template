@@ -52,12 +52,19 @@ def production_security_settings_check(app_configs, **kwargs):
                 id="saas.W004",
             )
         )
+    if getattr(settings, "INTEGRATION_CREDENTIALS_KEY", "") == settings.SECRET_KEY:
+        issues.append(
+            Warning(
+                "INTEGRATION_CREDENTIALS_KEY should be distinct from DJANGO_SECRET_KEY.",
+                id="saas.W005",
+            )
+        )
     if getattr(settings, "EMAIL_PROVIDER", "console") == "console":
         issues.append(
             Warning(
                 "EMAIL_PROVIDER is set to console. "
                 "Configure SES/Resend/Postmark before production.",
-                id="saas.W005",
+                id="saas.W006",
             )
         )
     return issues

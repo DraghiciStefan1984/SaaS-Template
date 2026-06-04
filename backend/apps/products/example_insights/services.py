@@ -1,9 +1,9 @@
 from django.db import transaction
 
-from apps.ai.services import select_ai_execution_plan
+from apps.ai.services import sanitize_constraints, select_ai_execution_plan
 from apps.billing.services import assert_feature_enabled
 from apps.reports.services import create_report_request
-from apps.usage.services import assert_within_usage_limit, record_usage
+from apps.usage.services import check_and_record_usage
 
 from .models import ExampleInsightRequest, ExampleInsightStatus
 
@@ -23,13 +23,20 @@ def create_example_insight_request(
 ):
     input_payload = input_payload or {}
     constraints = constraints or {}
+    public_constraints = sanitize_constraints(constraints)
+    server_constraints = {
+        **public_constraints,
+        "can_use_classic_ml": True,
+    }
 
     assert_feature_enabled(organization, EXAMPLE_INSIGHTS_FEATURE)
-    assert_within_usage_limit(
+    usage_record = check_and_record_usage(
         organization,
         EXAMPLE_INSIGHTS_USAGE_METRIC,
         quantity=1,
+        source="example_insights.create_request",
         product_scope=EXAMPLE_INSIGHTS_PRODUCT_SCOPE,
+        metadata={"status": "reserved"},
     )
 
     execution_plan = select_ai_execution_plan(
@@ -37,14 +44,12 @@ def create_example_insight_request(
         user=created_by,
         task_key="table_analysis",
         input_payload=input_payload,
-        constraints={
-            "can_use_classic_ml": True,
-            **constraints,
-        },
+        constraints=server_constraints,
         metadata={
             "product_scope": EXAMPLE_INSIGHTS_PRODUCT_SCOPE,
         },
         log_decision=True,
+        trusted_constraints=True,
     )
     report, job_run = create_report_request(
         organization=organization,
@@ -74,17 +79,11 @@ def create_example_insight_request(
     report.related_entity_id = str(insight_request.id)
     report.save(update_fields=["related_entity_id", "updated_at"])
 
-    record_usage(
-        organization,
-        EXAMPLE_INSIGHTS_USAGE_METRIC,
-        quantity=1,
-        source="example_insights.create_request",
-        product_scope=EXAMPLE_INSIGHTS_PRODUCT_SCOPE,
-        metadata={
-            "insight_request_id": insight_request.id,
-            "report_id": report.id,
-            "job_run_id": job_run.id,
-            "strategy": execution_plan["strategy"],
-        },
-    )
+    usage_record.metadata = {
+        "insight_request_id": insight_request.id,
+        "report_id": report.id,
+        "job_run_id": job_run.id,
+        "strategy": execution_plan["strategy"],
+    }
+    usage_record.save(update_fields=["metadata"])
     return insight_request

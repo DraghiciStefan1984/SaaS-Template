@@ -23,6 +23,14 @@ const secretPatterns = [
   /ANTHROPIC_API_KEY=sk-ant-[A-Za-z0-9_-]+/,
 ];
 
+const scaffoldRequiredSnippets = [
+  "assert_feature_enabled",
+  "check_and_record_usage",
+  "validate_json_payload_size",
+  "RequestSummarySerializer",
+  "TODO(privacy)",
+];
+
 const failures = [];
 
 for (const path of requiredPaths) {
@@ -41,6 +49,13 @@ for (const path of secretScanFiles) {
     if (pattern.test(content)) {
       failures.push(`Possible real secret in ${path}: ${pattern}`);
     }
+  }
+}
+
+const scaffoldContent = readFileSync("scripts/scaffold-product.mjs", "utf8");
+for (const snippet of scaffoldRequiredSnippets) {
+  if (!scaffoldContent.includes(snippet)) {
+    failures.push(`Product scaffold is missing required guard: ${snippet}`);
   }
 }
 

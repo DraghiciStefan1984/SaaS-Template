@@ -1,4 +1,5 @@
 import pytest
+from django.conf import settings
 from rest_framework.test import APIClient
 
 from apps.organizations.services import create_organization_for_owner
@@ -28,7 +29,9 @@ def test_frontend_contract_auth_and_organization_endpoints(django_user_model):
     )
     assert login_response.status_code == 200
     login_body = login_response.json()
-    assert_keys(login_body, {"access", "refresh", "user"})
+    assert_keys(login_body, {"access", "user"})
+    assert "refresh" not in login_body
+    assert login_response.cookies[settings.AUTH_REFRESH_COOKIE_NAME].value
     assert_keys(login_body["user"], {"id", "email", "name", "account_status"})
 
     client.force_authenticate(user)
@@ -152,5 +155,5 @@ def test_frontend_contract_create_workflow_endpoints(django_user_model):
     assert product_response.status_code == 201
     assert_keys(
         product_response.json(),
-        {"id", "report", "job_run", "title", "status", "ai_execution_plan"},
+        {"id", "report", "job_run", "title", "status", "strategy"},
     )

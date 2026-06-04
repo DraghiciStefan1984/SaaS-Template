@@ -3,7 +3,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import generics
 
 from apps.organizations.models import MembershipStatus, Organization
-from apps.organizations.permissions import require_membership
+from apps.organizations.permissions import ADMIN_ROLES, require_organization_role
 
 from .models import JobRun
 from .serializers import JobRunSerializer
@@ -37,6 +37,5 @@ class JobRunListView(generics.ListAPIView):
             ).distinct(),
             id=self.request.query_params.get("organization_id"),
         )
-        require_membership(self.request.user, organization)
+        require_organization_role(self.request.user, organization, ADMIN_ROLES)
         return JobRun.objects.filter(organization=organization).select_related("created_by")
-

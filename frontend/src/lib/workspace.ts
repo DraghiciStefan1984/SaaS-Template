@@ -10,3 +10,7 @@ export type WorkspaceContext = {
 export function useWorkspace() {
   return useOutletContext<WorkspaceContext>();
 }
+
+export function isOrganizationAdmin(organization: Organization | null) {
+  return organization?.my_role === "owner" || organization?.my_role === "admin";
+}

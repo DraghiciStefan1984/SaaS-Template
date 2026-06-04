@@ -6,7 +6,11 @@ from rest_framework.response import Response
 
 from apps.audit.services import log_audit_event
 from apps.organizations.models import MembershipStatus, Organization
-from apps.organizations.permissions import require_membership
+from apps.organizations.permissions import (
+    ADMIN_ROLES,
+    require_membership,
+    require_organization_role,
+)
 
 from .models import NotificationDeliveryLog, NotificationPreference
 from .serializers import (
@@ -62,6 +66,10 @@ class NotificationPreferenceListCreateView(generics.ListCreateAPIView):
         if data.get("user_id"):
             target_user = get_object_or_404(get_user_model(), id=data["user_id"])
             require_membership(target_user, organization)
+            if target_user != request.user:
+                require_organization_role(request.user, organization, ADMIN_ROLES)
+        else:
+            require_organization_role(request.user, organization, ADMIN_ROLES)
         preference = upsert_notification_preference(
             organization=organization,
             user=target_user,
@@ -96,9 +104,13 @@ class NotificationPreferenceListCreateView(generics.ListCreateAPIView):
             self.request.user,
             self.request.query_params.get("organization_id"),
         )
-        return NotificationPreference.objects.filter(organization=organization).select_related(
+        membership = require_membership(self.request.user, organization)
+        queryset = NotificationPreference.objects.filter(organization=organization).select_related(
             "user"
         )
+        if membership.role not in ADMIN_ROLES:
+            queryset = queryset.filter(user=self.request.user)
+        return queryset
 
 
 class NotificationDeliveryLogListView(generics.ListAPIView):
@@ -126,6 +138,7 @@ class NotificationDeliveryLogListView(generics.ListAPIView):
             self.request.user,
             self.request.query_params.get("organization_id"),
         )
+        require_organization_role(self.request.user, organization, ADMIN_ROLES)
         return NotificationDeliveryLog.objects.filter(organization=organization).select_related(
             "user"
         )
