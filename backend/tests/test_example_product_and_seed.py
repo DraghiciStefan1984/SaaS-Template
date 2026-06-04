@@ -99,6 +99,42 @@ def test_example_insight_endpoint_ignores_client_forced_ai_strategy(django_user_
     assert "force_strategy" not in decision_log.constraints
 
 
+def test_example_insight_endpoint_rejects_non_object_payload_fields(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    input_response = client.post(
+        "/api/v1/products/example-insights/requests/",
+        {
+            "organization_id": organization.id,
+            "title": "Revenue Trend",
+            "input_payload": ["not", "an", "object"],
+            "constraints": {"can_use_classic_ml": True},
+        },
+        format="json",
+    )
+    constraints_response = client.post(
+        "/api/v1/products/example-insights/requests/",
+        {
+            "organization_id": organization.id,
+            "title": "Revenue Trend",
+            "input_payload": {"rows": []},
+            "constraints": ["can_use_classic_ml"],
+        },
+        format="json",
+    )
+
+    assert input_response.status_code == 400
+    assert constraints_response.status_code == 400
+    assert "input_payload" in input_response.json()
+    assert "constraints" in constraints_response.json()
+    assert ExampleInsightRequest.objects.count() == 0
+    assert Report.objects.count() == 0
+    assert UsageRecord.objects.count() == 0
+
+
 def test_example_insight_endpoint_respects_plan_feature_flag(django_user_model):
     owner = make_user(django_user_model, email="owner@example.com")
     organization = create_organization_for_owner(owner, "Owner Workspace")

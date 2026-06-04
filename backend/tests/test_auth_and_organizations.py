@@ -3,6 +3,7 @@ from django.conf import settings
 from rest_framework.test import APIClient
 
 from apps.accounts.models import UserAccountStatus
+from apps.audit.models import AuditLog
 from apps.organizations.models import Membership, MembershipRole, MembershipStatus, Organization
 from apps.organizations.services import create_organization_for_owner
 from apps.privacy.models import DataDeletionRequest, PrivacyRequestStatus
@@ -265,6 +266,10 @@ def test_owner_delete_anonymizes_organization_without_hard_delete(django_user_mo
     deletion_request = DataDeletionRequest.objects.get(organization=organization)
     assert deletion_request.status == PrivacyRequestStatus.COMPLETED
     assert deletion_request.metadata["source"] == "organization_destroy"
+    audit_log = AuditLog.objects.get(action="organizations.deleted")
+    assert audit_log.organization == organization
+    assert audit_log.target_entity_id == str(organization.id)
+    assert audit_log.metadata["deletion_request_id"] == deletion_request.id
 
 
 def test_invite_member_creates_pending_invitation_without_sending_email(django_user_model):

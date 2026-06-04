@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.common.serializers import validate_json_payload_size
+from apps.common.serializers import validate_json_object
 
 from .models import (
     CredentialType,
@@ -80,9 +80,9 @@ class ConnectIntegrationSerializer(serializers.Serializer):
     credential_payload = serializers.JSONField(
         required=False,
         write_only=True,
-        validators=[validate_json_payload_size],
+        validators=[validate_json_object],
     )
-    metadata = serializers.JSONField(required=False, validators=[validate_json_payload_size])
+    metadata = serializers.JSONField(required=False, validators=[validate_json_object])
 
     def validate(self, attrs):
         provider = self.context["provider"]

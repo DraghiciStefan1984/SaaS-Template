@@ -11,3 +11,10 @@ def validate_json_payload_size(value):
             f"JSON payload exceeds {settings.MAX_JSON_PAYLOAD_BYTES} bytes."
         )
     return value
+
+
+def validate_json_object(value):
+    validate_json_payload_size(value)
+    if not isinstance(value, dict):
+        raise serializers.ValidationError("Expected a JSON object.")
+    return value

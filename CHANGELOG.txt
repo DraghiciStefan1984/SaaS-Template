@@ -1052,6 +1052,116 @@ External/not configured:
   updated.
 
 
+2026-06-04 - Code Review Remediation: Privacy Scope and Retry State Cleanup
+----------------------------------------------------------------------------
+Changed:
+- Existing privacy exports are now scrubbed during organization/account deletion
+  so pre-deletion export_payload copies do not preserve sensitive data after a
+  completed deletion request.
+- New privacy exports now receive expires_at based on DATA_RETENTION_DAYS.
+- Account-scoped privacy exports now export account/member-owned data instead of
+  the full organization export payload.
+- Account deletion requests can be created and executed by the authenticated
+  member for their own account; account anonymization now disables all of that
+  user's organization memberships.
+- Report retry handling now keeps the report in queued state while the JobRun is
+  retrying, and successful report generation clears stale error_message text.
+- DELETE /organizations/{id}/ now writes an explicit organizations.deleted audit
+  event after the anonymizing privacy deletion flow completes.
+- AI execution plans now report not_configured when an LLM strategy requires a
+  provider but no active provider is available, including when a policy points to
+  an inactive provider.
+- Report creation now rejects unknown or inactive template_key values with a
+  validation error instead of silently falling back to recurring_ai_report.
+
+Verification:
+- Focused privacy tests passed: 8 tests.
+- Focused report/job tests passed: 15 tests.
+- Focused integration/AI tests passed: 23 tests.
+- npm run backend:lint passed.
+- npm run release:check passed, including full backend pytest: 109 tests and
+  frontend lint/typecheck/test/build.
+
+External/not configured:
+- Deploy workflow publish/release/migration steps remain TODO until AWS
+  resources, ECR/ECS choices, domains, and environment secrets are finalized.
+- Docker CLI is still not installed locally, so Docker runtime validation remains
+  static until Docker Desktop is installed.
+- No new markdown documents were created in this phase.
+
+
+2026-06-04 - Code Review Remediation: Account Export Visibility
+----------------------------------------------------------------
+Changed:
+- Account-scoped privacy exports remain cross-organization for the requesting
+  account, but are no longer list-visible to admins of the selected
+  organization unless that admin is also the requester.
+- Organization admins now see organization-scoped exports plus only their own
+  account-scoped exports.
+- Added regression coverage for account export visibility to prevent
+  cross-organization account payload exposure through organization export lists.
+
+Verification:
+- Focused privacy compliance tests passed: 9 tests.
+- npm run release:check passed, including full backend pytest: 110 tests and
+  frontend lint/typecheck/test/build.
+
+External/not configured:
+- No new markdown documents were created in this phase.
+
+
+2026-06-04 - Code Review Remediation: Account Deletion Permissions and JSON Objects
+-----------------------------------------------------------------------------------
+Changed:
+- Account deletion requests can now be executed only by the requesting account
+  owner or platform staff. Organization owners no longer get authority to
+  execute another user's account-wide deletion request.
+- Organization owners no longer list other members' account-scoped deletion
+  requests through the organization privacy deletion endpoint.
+- Added reusable JSON object validation for fields that are semantically dicts.
+- AI constraints/metadata, example insight input/constraints, and report
+  input_payload now reject arrays, strings, and other non-object JSON before
+  service execution.
+- Added service-layer defensive validation for the same object-only payloads so
+  non-API callers cannot bypass serializer checks.
+- Restricted the generated reports ignore rule from reports/ to /reports/ so
+  the reusable Django reports app is no longer hidden from git status.
+- Added regression coverage for account deletion execution permissions and
+  non-object JSON payload rejection in AI, reports, and the example product.
+
+Verification:
+- Focused privacy/report/example-product/AI tests passed: 60 tests.
+- npm run release:check passed, including full backend pytest: 114 tests and
+  frontend lint/typecheck/test/build.
+
+External/not configured:
+- No new markdown documents were created in this phase.
+
+
+2026-06-04 - Code Review Remediation: Reports Tracking and Integration JSON Objects
+-----------------------------------------------------------------------------------
+Changed:
+- Verified that backend/apps/reports is no longer ignored by .gitignore and must
+  be included with the template commit because the backend depends on the
+  reports Django app at runtime.
+- Integration connect payloads now require JSON objects for credential_payload
+  and metadata instead of accepting arrays, strings, or other JSON shapes.
+- Integration service creation now defensively rejects non-object credential and
+  metadata payloads for non-serializer callers.
+- Integration disconnect now tolerates legacy/non-object metadata by replacing
+  it with a safe object before adding the credential_deleted marker.
+- Added regression coverage for non-object integration credential/metadata
+  payload rejection.
+
+Verification:
+- Focused integration/AI tests passed: 25 tests.
+- npm run release:check passed, including full backend pytest: 115 tests and
+  frontend lint/typecheck/test/build.
+
+External/not configured:
+- No new markdown documents were created in this phase.
+
+
 Release Candidate Status
 ------------------------
 Template v1 release candidate is ready for local review.

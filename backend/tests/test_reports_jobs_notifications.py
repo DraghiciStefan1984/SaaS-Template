@@ -169,6 +169,54 @@ def test_report_request_endpoint_respects_report_feature_flag(django_user_model)
     assert UsageRecord.objects.filter(organization=organization).count() == 0
 
 
+def test_report_request_rejects_unknown_template_key(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        "/api/v1/reports/",
+        {
+            "organization_id": organization.id,
+            "title": "Typo Report",
+            "template_key": "wekly-summary",
+            "requested_format": "json",
+            "input_payload": {"metrics": {"revenue": 1000}},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "template_key" in response.json()
+    assert Report.objects.filter(organization=organization).count() == 0
+    assert UsageRecord.objects.filter(organization=organization).count() == 0
+
+
+def test_report_request_rejects_non_object_input_payload(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        "/api/v1/reports/",
+        {
+            "organization_id": organization.id,
+            "title": "Invalid Payload Report",
+            "template_key": "weekly_summary",
+            "requested_format": "json",
+            "input_payload": ["not", "an", "object"],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "input_payload" in response.json()
+    assert Report.objects.filter(organization=organization).count() == 0
+    assert UsageRecord.objects.filter(organization=organization).count() == 0
+
+
 @override_settings(MAX_JSON_PAYLOAD_BYTES=20)
 def test_report_request_rejects_oversized_input_payload(django_user_model):
     owner = make_user(django_user_model, email="owner@example.com")
@@ -200,6 +248,7 @@ def test_generate_report_task_creates_artifact_ai_decision_and_notification(djan
         created_by=owner,
         title="Weekly KPI Summary",
         template=template,
+        error_message="old transient error",
         input_payload={"metrics": {"revenue": 1000}},
     )
     job_run = create_job_run(
@@ -217,6 +266,7 @@ def test_generate_report_task_creates_artifact_ai_decision_and_notification(djan
     report.refresh_from_db()
     job_run.refresh_from_db()
     assert report.status == ReportStatus.SUCCEEDED
+    assert report.error_message == ""
     assert job_run.status == JobRunStatus.SUCCEEDED
     assert result["report_id"] == report.id
     artifact = ReportArtifact.objects.get(report=report)
@@ -231,6 +281,46 @@ def test_generate_report_task_creates_artifact_ai_decision_and_notification(djan
         event="report_ready",
         status=NotificationDeliveryStatus.SENT,
     ).exists()
+
+
+def test_generate_report_task_keeps_report_queued_during_retry(
+    django_user_model,
+    monkeypatch,
+):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    template = ReportTemplate.objects.get(key="weekly_summary")
+    report = Report.objects.create(
+        organization=organization,
+        created_by=owner,
+        title="Retrying Report",
+        template=template,
+        input_payload={"metrics": {"revenue": 1000}},
+    )
+    job_run = create_job_run(
+        organization=organization,
+        created_by=owner,
+        name="Generate report",
+        task_name="apps.reports.tasks.generate_report_task",
+        related_entity_type="report",
+        related_entity_id=str(report.id),
+        metadata={"report_id": report.id, "template_key": template.key},
+    )
+
+    def raise_transient_failure(**_kwargs):
+        raise RuntimeError("Transient provider failure")
+
+    monkeypatch.setattr("apps.reports.tasks.create_report_artifact", raise_transient_failure)
+
+    with pytest.raises(RuntimeError, match="Transient provider failure"):
+        generate_report_task(report.id, job_run.id)
+
+    report.refresh_from_db()
+    job_run.refresh_from_db()
+    assert report.status == ReportStatus.QUEUED
+    assert report.error_message == "Transient provider failure"
+    assert report.completed_at is None
+    assert job_run.status == JobRunStatus.RETRYING
 
 
 def test_job_run_failure_marks_retrying_until_attempts_are_exhausted(django_user_model):

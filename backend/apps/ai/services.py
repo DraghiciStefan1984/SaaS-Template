@@ -114,6 +114,8 @@ def normalize_strategy(value):
 
 def sanitize_constraints(constraints, trusted=False):
     constraints = constraints or {}
+    if not isinstance(constraints, dict):
+        raise ValidationError({"constraints": "Expected a JSON object."})
     if trusted:
         return constraints
     return {
@@ -261,6 +263,20 @@ def default_llm_provider():
     return AIProvider.objects.filter(is_active=True).order_by("name").first()
 
 
+def execution_plan_configuration_status(strategy, provider):
+    if strategy in LLM_STRATEGIES:
+        if provider is not None:
+            return provider_configuration_status(provider)
+        return {
+            "status": "not_configured",
+            "detail": "Selected LLM strategy requires an active provider, but none is available.",
+        }
+    return {
+        "status": "not_required",
+        "detail": "Selected strategy does not require an external LLM provider.",
+    }
+
+
 def select_ai_execution_plan(
     *,
     organization,
@@ -274,6 +290,8 @@ def select_ai_execution_plan(
 ):
     constraints = sanitize_constraints(constraints, trusted=trusted_constraints)
     metadata = metadata or {}
+    if not isinstance(metadata, dict):
+        raise ValidationError({"metadata": "Expected a JSON object."})
     profile = AITaskProfile.objects.filter(key=task_key, is_active=True).first()
     if profile is None:
         raise ValidationError({"task_key": "No active AI task profile exists for this key."})
@@ -290,7 +308,11 @@ def select_ai_execution_plan(
     provider = None
     selected_model = ""
     if selected_strategy in LLM_STRATEGIES:
-        provider = policy.provider if policy and policy.provider else default_llm_provider()
+        provider = (
+            policy.provider
+            if policy and policy.provider and policy.provider.is_active
+            else default_llm_provider()
+        )
         selected_model = (
             policy.model_name
             if policy and policy.model_name
@@ -298,7 +320,11 @@ def select_ai_execution_plan(
         )
 
     fallback_strategy = policy.fallback_strategy if policy and policy.fallback_strategy else ""
-    fallback_provider = policy.fallback_provider if policy and policy.fallback_provider else None
+    fallback_provider = (
+        policy.fallback_provider
+        if policy and policy.fallback_provider and policy.fallback_provider.is_active
+        else None
+    )
     fallback_model = policy.fallback_model_name if policy else ""
 
     requires_human_review = (
@@ -345,14 +371,7 @@ def select_ai_execution_plan(
         },
         "fallback_chain": fallback_chain,
         "reason": reason,
-        "configuration": (
-            provider_configuration_status(provider)
-            if provider
-            else {
-                "status": "not_required",
-                "detail": "Selected strategy does not require an external LLM provider.",
-            }
-        ),
+        "configuration": execution_plan_configuration_status(selected_strategy, provider),
         "constraints": constraints,
         "input_summary": input_summary,
     }

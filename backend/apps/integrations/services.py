@@ -76,6 +76,12 @@ def connect_integration_account(
     if not provider.is_active:
         raise ValidationError({"provider": "This provider is disabled."})
 
+    metadata = metadata or {}
+    if not isinstance(metadata, dict):
+        raise ValidationError({"metadata": "Expected a JSON object."})
+    if credential_payload is not None and not isinstance(credential_payload, dict):
+        raise ValidationError({"credential_payload": "Expected a JSON object."})
+
     if provider.auth_type == ProviderAuthType.OAUTH2 and not credential_payload:
         # Once a real OAuth app exists, exchange authorization codes in a provider client here.
         raise IntegrationProviderNotConfigured()
@@ -94,7 +100,7 @@ def connect_integration_account(
             "status": IntegrationAccountStatus.CONNECTED,
             "scopes": scopes or provider.scopes,
             "connected_by": connected_by,
-            "metadata": metadata or {},
+            "metadata": metadata,
         },
     )
 
@@ -121,7 +127,8 @@ def disconnect_integration_account(account):
     account.status = IntegrationAccountStatus.DISCONNECTED
     account.external_account_id = ""
     account.scopes = []
-    account.metadata = {**account.metadata, "credential_deleted": True}
+    metadata = account.metadata if isinstance(account.metadata, dict) else {}
+    account.metadata = {**metadata, "credential_deleted": True}
     account.save(
         update_fields=[
             "status",

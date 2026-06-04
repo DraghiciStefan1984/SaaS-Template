@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Count
@@ -24,6 +26,7 @@ from .models import (
     DataDeletionRequest,
     DataDeletionTarget,
     DataExportRequest,
+    DataExportScope,
     PrivacyRequestStatus,
 )
 
@@ -344,13 +347,91 @@ def build_organization_export_payload(organization):
     }
 
 
+def build_account_export_payload(*, organization, user):
+    return {
+        "schema_version": 1,
+        "generated_at": timezone.now().isoformat(),
+        "retention": {
+            "data_retention_days": settings.DATA_RETENTION_DAYS,
+            "audit_log_retention_days": settings.AUDIT_LOG_RETENTION_DAYS,
+        },
+        "account": _user_payload(user),
+        "selected_organization": {
+            "id": organization.id,
+            "name": organization.name,
+        },
+        "membership_records": [
+            {
+                "id": membership.id,
+                "organization": {
+                    "id": membership.organization_id,
+                    "name": membership.organization.name,
+                },
+                "role": membership.role,
+                "status": membership.status,
+                "joined_at": _iso(membership.joined_at),
+                "created_at": _iso(membership.created_at),
+                "updated_at": _iso(membership.updated_at),
+            }
+            for membership in user.organization_memberships.select_related(
+                "organization"
+            ).order_by("organization_id", "id")
+        ],
+        "created_reports": [
+            {
+                "id": report.id,
+                "organization_id": report.organization_id,
+                "template_key": report.template.key if report.template else "",
+                "title": report.title,
+                "status": report.status,
+                "requested_format": report.requested_format,
+                "input_payload": report.input_payload,
+                "result_summary": report.result_summary,
+                "error_message": report.error_message,
+                "created_at": _iso(report.created_at),
+                "updated_at": _iso(report.updated_at),
+            }
+            for report in Report.objects.filter(created_by=user)
+            .select_related("template")
+            .order_by("id")
+        ],
+        "created_example_insight_requests": [
+            {
+                "id": request.id,
+                "organization_id": request.organization_id,
+                "report_id": request.report_id,
+                "job_run_id": request.job_run_id,
+                "title": request.title,
+                "status": request.status,
+                "input_payload": request.input_payload,
+                "constraints": request.constraints,
+                "ai_execution_plan": request.ai_execution_plan,
+                "error_message": request.error_message,
+                "created_at": _iso(request.created_at),
+                "updated_at": _iso(request.updated_at),
+            }
+            for request in ExampleInsightRequest.objects.filter(created_by=user).order_by("id")
+        ],
+    }
+
+
+def _privacy_export_expires_at():
+    return timezone.now() + timedelta(days=settings.DATA_RETENTION_DAYS)
+
+
 def create_data_export_request(*, organization, requested_by, scope):
+    export_payload = (
+        build_account_export_payload(organization=organization, user=requested_by)
+        if scope == DataExportScope.ACCOUNT
+        else build_organization_export_payload(organization)
+    )
     return DataExportRequest.objects.create(
         organization=organization,
         requested_by=requested_by,
         scope=scope,
         status=PrivacyRequestStatus.COMPLETED,
-        export_payload=build_organization_export_payload(organization),
+        export_payload=export_payload,
+        expires_at=_privacy_export_expires_at(),
         completed_at=timezone.now(),
     )
 
@@ -384,6 +465,15 @@ def _anonymize_user(user):
             "is_active",
             "password",
         ]
+    )
+
+
+def _scrub_data_exports(queryset):
+    queryset.update(
+        export_payload={"privacy_deleted": True},
+        file_path="",
+        error_message="",
+        expires_at=timezone.now(),
     )
 
 
@@ -490,16 +580,18 @@ def _anonymize_organization(organization):
         request_id="",
         metadata={},
     )
+    _scrub_data_exports(DataExportRequest.objects.filter(organization=organization))
 
 
 def _anonymize_account(deletion_request):
     user = deletion_request.requested_by
     if user is None:
         return
-    deletion_request.organization.memberships.filter(user=user).update(
+    user.organization_memberships.update(
         invited_email="",
         status="disabled",
     )
+    _scrub_data_exports(DataExportRequest.objects.filter(requested_by=user))
     _anonymize_user(user)
 
 

@@ -1,4 +1,5 @@
 from django.db import transaction
+from rest_framework.exceptions import ValidationError
 
 from apps.ai.services import sanitize_constraints, select_ai_execution_plan
 from apps.billing.services import assert_feature_enabled
@@ -23,6 +24,10 @@ def create_example_insight_request(
 ):
     input_payload = input_payload or {}
     constraints = constraints or {}
+    if not isinstance(input_payload, dict):
+        raise ValidationError({"input_payload": "Expected a JSON object."})
+    if not isinstance(constraints, dict):
+        raise ValidationError({"constraints": "Expected a JSON object."})
     public_constraints = sanitize_constraints(constraints)
     server_constraints = {
         **public_constraints,

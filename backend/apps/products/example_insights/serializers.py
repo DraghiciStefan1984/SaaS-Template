@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.common.serializers import validate_json_payload_size
+from apps.common.serializers import validate_json_object
 
 from .models import ExampleInsightRequest
 from .services import create_example_insight_request
@@ -53,8 +53,8 @@ class ExampleInsightRequestSummarySerializer(serializers.ModelSerializer):
 class ExampleInsightCreateSerializer(serializers.Serializer):
     organization_id = serializers.IntegerField()
     title = serializers.CharField(max_length=240)
-    input_payload = serializers.JSONField(required=False, validators=[validate_json_payload_size])
-    constraints = serializers.JSONField(required=False, validators=[validate_json_payload_size])
+    input_payload = serializers.JSONField(required=False, validators=[validate_json_object])
+    constraints = serializers.JSONField(required=False, validators=[validate_json_object])
 
     def create(self, validated_data):
         return create_example_insight_request(

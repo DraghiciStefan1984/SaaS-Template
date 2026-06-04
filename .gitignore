@@ -112,7 +112,7 @@ dump.rdb
 
 # Generated reports and exports
 exports/
-reports/
+/reports/
 artifacts/
 tmp/
 temp/

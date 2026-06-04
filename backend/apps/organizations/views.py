@@ -2,6 +2,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.audit.services import log_audit_event
 from apps.privacy.models import DataDeletionTarget
 from apps.privacy.services import create_data_deletion_request, execute_data_deletion_request
 
@@ -42,6 +43,18 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             metadata={"source": "organization_destroy"},
         )
         execute_data_deletion_request(deletion_request)
+        log_audit_event(
+            action="organizations.deleted",
+            organization=organization,
+            request=request,
+            category="organizations",
+            target_entity_type="organization",
+            target_entity_id=organization.id,
+            metadata={
+                "deletion_request_id": deletion_request.id,
+                "status": deletion_request.status,
+            },
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"])

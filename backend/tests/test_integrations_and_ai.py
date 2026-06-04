@@ -137,6 +137,39 @@ def test_connect_integration_rejects_oversized_json_payloads(django_user_model):
     assert "credential_payload" in response.json()
 
 
+def test_connect_integration_rejects_non_object_json_payloads(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    provider = make_api_key_provider()
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    credential_response = client.post(
+        f"/api/v1/integrations/{provider.slug}/connect/",
+        {
+            "organization_id": organization.id,
+            "credential_payload": "secret-api-key",
+            "metadata": {"label": "primary"},
+        },
+        format="json",
+    )
+    metadata_response = client.post(
+        f"/api/v1/integrations/{provider.slug}/connect/",
+        {
+            "organization_id": organization.id,
+            "credential_payload": {"api_key": "secret-api-key"},
+            "metadata": [],
+        },
+        format="json",
+    )
+
+    assert credential_response.status_code == 400
+    assert metadata_response.status_code == 400
+    assert "credential_payload" in credential_response.json()
+    assert "metadata" in metadata_response.json()
+    assert organization.integration_accounts.count() == 0
+
+
 def test_oauth_provider_returns_descriptive_error_until_oauth_client_exists(django_user_model):
     owner = make_user(django_user_model, email="owner@example.com")
     organization = create_organization_for_owner(owner, "Owner Workspace")
@@ -475,6 +508,28 @@ def test_public_execution_plan_ignores_privileged_client_constraints(django_user
     assert "expected_runs_per_month" not in body["constraints"]
 
 
+def test_execution_plan_rejects_non_object_constraints(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        "/api/v1/ai/execution-plan/",
+        {
+            "organization_id": organization.id,
+            "task_key": "table_analysis",
+            "input_payload": {"metric": "revenue", "rows": 5000},
+            "constraints": ["can_use_classic_ml"],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "constraints" in response.json()
+    assert not AIModelDecisionLog.objects.filter(organization=organization).exists()
+
+
 def test_execution_plan_uses_low_cost_llm_for_recurring_report_narrative(django_user_model):
     owner = make_user(django_user_model, email="owner@example.com")
     organization = create_organization_for_owner(owner, "Owner Workspace")
@@ -491,6 +546,25 @@ def test_execution_plan_uses_low_cost_llm_for_recurring_report_narrative(django_
     assert execution_plan["provider_slug"] == "openai"
     assert execution_plan["configuration"]["status"] == "not_configured"
     assert "OPENAI_API_KEY" in execution_plan["configuration"]["detail"]
+
+
+def test_llm_execution_plan_reports_missing_required_provider(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    AIProvider.objects.update(is_active=False)
+
+    execution_plan = select_ai_execution_plan(
+        organization=organization,
+        user=owner,
+        task_key="recurring_ai_report",
+        input_payload={"facts": {"revenue": 1000}},
+        constraints={},
+    )
+
+    assert execution_plan["strategy"] == "low_cost_llm"
+    assert execution_plan["provider_slug"] == ""
+    assert execution_plan["configuration"]["status"] == "not_configured"
+    assert "requires an active provider" in execution_plan["configuration"]["detail"]
 
 
 def test_high_risk_execution_plan_requires_human_review(django_user_model):

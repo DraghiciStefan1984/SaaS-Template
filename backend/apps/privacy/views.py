@@ -1,14 +1,21 @@
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import generics, status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.audit.services import log_audit_event
 from apps.organizations.models import MembershipStatus, Organization
-from apps.organizations.permissions import ADMIN_ROLES, OWNER_ROLES, require_organization_role
+from apps.organizations.permissions import (
+    ADMIN_ROLES,
+    OWNER_ROLES,
+    require_membership,
+    require_organization_role,
+)
 
-from .models import DataDeletionRequest, DataExportRequest
+from .models import DataDeletionRequest, DataDeletionTarget, DataExportRequest, DataExportScope
 from .serializers import (
     DataDeletionCreateSerializer,
     DataDeletionRequestSerializer,
@@ -30,6 +37,25 @@ def get_member_organization(user, organization_id):
         ).distinct(),
         id=organization_id,
     )
+
+
+def is_organization_admin(user, organization):
+    membership = require_membership(user, organization)
+    return membership.role in ADMIN_ROLES
+
+
+def require_privacy_export_permission(user, organization, scope):
+    if scope == DataExportScope.ORGANIZATION:
+        require_organization_role(user, organization, ADMIN_ROLES)
+        return
+    require_membership(user, organization)
+
+
+def require_privacy_deletion_permission(user, organization, target):
+    if target == DataDeletionTarget.ORGANIZATION:
+        require_organization_role(user, organization, OWNER_ROLES)
+        return
+    require_membership(user, organization)
 
 
 class DataExportRequestListCreateView(generics.ListCreateAPIView):
@@ -60,7 +86,11 @@ class DataExportRequestListCreateView(generics.ListCreateAPIView):
             request.user,
             serializer.validated_data["organization_id"],
         )
-        require_organization_role(request.user, organization, ADMIN_ROLES)
+        require_privacy_export_permission(
+            request.user,
+            organization,
+            serializer.validated_data["scope"],
+        )
         export_request = create_data_export_request(
             organization=organization,
             requested_by=request.user,
@@ -88,9 +118,17 @@ class DataExportRequestListCreateView(generics.ListCreateAPIView):
             self.request.user,
             self.request.query_params.get("organization_id"),
         )
-        require_organization_role(self.request.user, organization, ADMIN_ROLES)
-        return DataExportRequest.objects.filter(organization=organization).select_related(
+        queryset = DataExportRequest.objects.filter(organization=organization).select_related(
             "requested_by"
+        )
+        if is_organization_admin(self.request.user, organization):
+            return queryset.filter(
+                Q(scope=DataExportScope.ORGANIZATION)
+                | Q(scope=DataExportScope.ACCOUNT, requested_by=self.request.user)
+            )
+        return queryset.filter(
+            requested_by=self.request.user,
+            scope=DataExportScope.ACCOUNT,
         )
 
 
@@ -122,7 +160,11 @@ class DataDeletionRequestListCreateView(generics.ListCreateAPIView):
             request.user,
             serializer.validated_data["organization_id"],
         )
-        require_organization_role(request.user, organization, OWNER_ROLES)
+        require_privacy_deletion_permission(
+            request.user,
+            organization,
+            serializer.validated_data["target"],
+        )
         deletion_request = create_data_deletion_request(
             organization=organization,
             requested_by=request.user,
@@ -152,9 +194,19 @@ class DataDeletionRequestListCreateView(generics.ListCreateAPIView):
             self.request.user,
             self.request.query_params.get("organization_id"),
         )
-        require_organization_role(self.request.user, organization, OWNER_ROLES)
-        return DataDeletionRequest.objects.filter(organization=organization).select_related(
+        queryset = DataDeletionRequest.objects.filter(organization=organization).select_related(
             "requested_by"
+        )
+        try:
+            require_organization_role(self.request.user, organization, OWNER_ROLES)
+        except PermissionDenied:
+            return queryset.filter(
+                requested_by=self.request.user,
+                target=DataDeletionTarget.ACCOUNT,
+            )
+        return queryset.filter(
+            Q(target=DataDeletionTarget.ORGANIZATION)
+            | Q(target=DataDeletionTarget.ACCOUNT, requested_by=self.request.user)
         )
 
 
@@ -167,7 +219,16 @@ class DataDeletionRequestExecuteView(APIView):
             DataDeletionRequest.objects.select_related("organization", "requested_by"),
             id=request_id,
         )
-        require_organization_role(request.user, deletion_request.organization, OWNER_ROLES)
+        if deletion_request.target == DataDeletionTarget.ORGANIZATION:
+            require_organization_role(request.user, deletion_request.organization, OWNER_ROLES)
+        elif request.user.is_staff:
+            pass
+        elif deletion_request.requested_by_id == request.user.id:
+            require_membership(request.user, deletion_request.organization)
+        else:
+            raise PermissionDenied(
+                "Only the requesting account owner or platform staff can execute account deletion."
+            )
         deletion_request = execute_data_deletion_request(deletion_request)
         log_audit_event(
             action="privacy.deletion.executed",
