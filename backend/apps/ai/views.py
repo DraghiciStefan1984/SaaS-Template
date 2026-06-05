@@ -26,9 +26,9 @@ from .serializers import (
     AIExecutionPlanSerializer,
     AIModelDecisionLogSerializer,
     AIModelPolicySerializer,
-    AIProviderSerializer,
-    AITaskProfileSerializer,
     PromptTemplateSerializer,
+    PublicAIProviderSerializer,
+    PublicAITaskProfileSerializer,
 )
 from .services import select_ai_execution_plan
 
@@ -46,7 +46,7 @@ def get_member_organization(user, organization_id):
 
 
 class AIProviderListView(generics.ListAPIView):
-    serializer_class = AIProviderSerializer
+    serializer_class = PublicAIProviderSerializer
     pagination_class = None
 
     def get_queryset(self):
@@ -62,7 +62,7 @@ class PromptTemplateListView(generics.ListAPIView):
 
 
 class AITaskProfileListView(generics.ListAPIView):
-    serializer_class = AITaskProfileSerializer
+    serializer_class = PublicAITaskProfileSerializer
 
     def get_queryset(self):
         return AITaskProfile.objects.filter(is_active=True).order_by("key")

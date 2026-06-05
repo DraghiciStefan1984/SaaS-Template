@@ -88,7 +88,7 @@ def test_frontend_contract_ai_execution_plan_and_logs(django_user_model):
     assert task_profiles_response.status_code == 200
     assert_keys(
         task_profiles_response.json()["results"][0],
-        {"id", "key", "name", "default_strategy", "allowed_strategies"},
+        {"id", "key", "name", "description", "product_area"},
     )
     assert execution_plan_response.status_code == 200
     assert_keys(

@@ -37,9 +37,9 @@ export function AIPage() {
 
   const taskProfiles = listResults(taskProfilesQuery.data);
   const decisionLogs = listResults(decisionLogsQuery.data);
-  const activeTaskProfile = useMemo(
-    () => taskProfiles.find((profile) => profile.key === taskKey),
-    [taskKey, taskProfiles],
+  const taskOptions = useMemo(
+    () => taskProfiles.map((profile) => ({ key: profile.key, name: profile.name })),
+    [taskProfiles],
   );
 
   const executionPlanMutation = useMutation({
@@ -72,7 +72,7 @@ export function AIPage() {
             onChange={(event) => setTaskKey(event.target.value)}
             value={taskKey}
           >
-            {taskProfiles.map((profile) => (
+            {taskOptions.map((profile) => (
               <option key={profile.key} value={profile.key}>
                 {profile.name}
               </option>
@@ -152,9 +152,9 @@ export function AIPage() {
               <div className="compact-row" key={provider.id}>
                 <div>
                   <strong>{provider.name}</strong>
-                  <span>{provider.default_model || "default model not set"}</span>
+                  <span>{provider.slug}</span>
                 </div>
-                <StatusBadge value={provider.configuration.status} />
+                <StatusBadge value={provider.status} />
               </div>
             ))}
           </div>
@@ -163,16 +163,14 @@ export function AIPage() {
         <div className="tool-panel">
           <div className="panel-heading">
             <h2>Task Profiles</h2>
-            {activeTaskProfile ? <StatusBadge value={activeTaskProfile.default_strategy} /> : null}
           </div>
           <div className="compact-list">
             {taskProfiles.map((profile) => (
               <div className="compact-row" key={profile.id}>
                 <div>
                   <strong>{profile.name}</strong>
-                  <span>{profile.expected_runs_per_month} runs/month</span>
+                  <span>{profile.product_area || "shared AI workflow"}</span>
                 </div>
-                <StatusBadge value={profile.default_strategy} />
               </div>
             ))}
           </div>

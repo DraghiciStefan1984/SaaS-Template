@@ -1162,6 +1162,34 @@ External/not configured:
 - No new markdown documents were created in this phase.
 
 
+2026-06-05 - Code Review Remediation: Public AI Configuration Exposure
+----------------------------------------------------------------------
+Changed:
+- Public AI provider listing now returns only safe provider metadata: id, name,
+  slug, and status.
+- Public AI task profile listing now returns only safe task metadata: id, key,
+  name, description, and product area.
+- Internal provider configuration, default models, supported feature maps,
+  task run-volume assumptions, cost thresholds, quality thresholds, allowed
+  strategies, and task config are no longer exposed through the public provider
+  and task-profile list endpoints.
+- The AI dashboard no longer displays provider model/configuration status or
+  task run-volume/cost-policy details from public list responses.
+- Added regression coverage for public AI list responses so normal users do not
+  receive internal AI configuration or cost-policy fields.
+
+Verification:
+- Focused AI/API contract tests passed: 29 tests.
+- npm run frontend:typecheck passed.
+- npm run frontend:lint passed.
+- npm run backend:lint passed.
+- npm run release:check passed, including full backend pytest: 115 tests and
+  frontend lint/typecheck/test/build.
+
+External/not configured:
+- No new markdown documents were created in this phase.
+
+
 Release Candidate Status
 ------------------------
 Template v1 release candidate is ready for local review.

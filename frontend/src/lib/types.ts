@@ -108,24 +108,14 @@ export type AIProvider = {
   name: string;
   slug: string;
   status: string;
-  default_model: string;
-  supported_features: Record<string, unknown>;
-  configuration: {
-    status: string;
-    detail: string;
-  };
 };
 
 export type AITaskProfile = {
   id: number;
   key: string;
   name: string;
+  description: string;
   product_area: string;
-  default_strategy: string;
-  allowed_strategies: string[];
-  expected_runs_per_month: number;
-  max_cost_per_run: string;
-  is_high_risk: boolean;
 };
 
 export type AIExecutionPlan = {

@@ -35,6 +35,18 @@ class AIProviderSerializer(serializers.ModelSerializer):
         return provider_configuration_status(obj)
 
 
+class PublicAIProviderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AIProvider
+        fields = (
+            "id",
+            "name",
+            "slug",
+            "status",
+        )
+        read_only_fields = fields
+
+
 class PromptTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PromptTemplate
@@ -75,6 +87,19 @@ class AITaskProfileSerializer(serializers.ModelSerializer):
             "is_active",
             "created_at",
             "updated_at",
+        )
+        read_only_fields = fields
+
+
+class PublicAITaskProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AITaskProfile
+        fields = (
+            "id",
+            "key",
+            "name",
+            "description",
+            "product_area",
         )
         read_only_fields = fields
 

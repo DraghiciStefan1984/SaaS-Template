@@ -263,7 +263,7 @@ def test_member_cannot_read_integration_sync_logs(django_user_model):
     assert response.status_code == 403
 
 
-def test_default_ai_providers_are_available_and_not_configured_without_api_keys(django_user_model):
+def test_default_ai_providers_expose_only_public_metadata(django_user_model):
     user = make_user(django_user_model, email="owner@example.com")
     client = APIClient()
     client.force_authenticate(user)
@@ -274,7 +274,10 @@ def test_default_ai_providers_are_available_and_not_configured_without_api_keys(
     slugs = {provider["slug"] for provider in response.json()}
     assert {"openai", "anthropic", "gemini"}.issubset(slugs)
     openai_provider = next(provider for provider in response.json() if provider["slug"] == "openai")
-    assert openai_provider["configuration"]["status"] == "not_configured"
+    assert set(openai_provider) == {"id", "name", "slug", "status"}
+    assert "default_model" not in openai_provider
+    assert "supported_features" not in openai_provider
+    assert "configuration" not in openai_provider
 
 
 def test_prompt_templates_and_model_policies_require_staff_user(django_user_model):
@@ -425,10 +428,19 @@ def test_default_ai_task_profiles_are_exposed(django_user_model):
     response = client.get("/api/v1/ai/task-profiles/")
 
     assert response.status_code == 200
-    profile_keys = {profile["key"] for profile in response.json()["results"]}
+    profiles = response.json()["results"]
+    profile_keys = {profile["key"] for profile in profiles}
     assert {"recurring_ai_report", "table_analysis", "high_risk_advice"}.issubset(
         profile_keys
     )
+    table_profile = next(profile for profile in profiles if profile["key"] == "table_analysis")
+    assert set(table_profile) == {"id", "key", "name", "description", "product_area"}
+    assert "default_strategy" not in table_profile
+    assert "allowed_strategies" not in table_profile
+    assert "expected_runs_per_month" not in table_profile
+    assert "max_cost_per_run" not in table_profile
+    assert "quality_threshold" not in table_profile
+    assert "config" not in table_profile
 
 
 def test_execution_plan_prefers_deterministic_strategy_when_problem_allows_it(django_user_model):
