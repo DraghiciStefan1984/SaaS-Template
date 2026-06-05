@@ -3,7 +3,7 @@ import { FormEvent, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 
 import { LoadingState, SuccessState } from "../components/StateBlock";
-import { getApiErrorMessage } from "../lib/api";
+import { api, getApiErrorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
 type AuthMode = "login" | "register" | "recover";
@@ -40,7 +40,8 @@ export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
     setIsSubmitting(true);
     try {
       if (mode === "recover") {
-        setSuccess("If the account exists, password recovery instructions will be sent.");
+        const response = await api.recoverPassword(email);
+        setSuccess(response.detail);
       } else if (mode === "login") {
         await login(email, password);
         navigate("/dashboard");

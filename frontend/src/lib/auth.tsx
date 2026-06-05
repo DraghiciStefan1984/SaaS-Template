@@ -18,6 +18,7 @@ type AuthContextValue = {
     name: string;
     organization_name: string;
   }) => Promise<void>;
+  updateProfile: (payload: { name: string }) => Promise<User>;
   logout: () => Promise<void>;
 };
 
@@ -121,6 +122,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         persistUser(response.user);
         setAccessToken(nextAccessToken);
         setUser(response.user);
+      },
+      async updateProfile(payload) {
+        const updatedUser = await api.updateMe(accessToken, payload);
+        persistUser(updatedUser);
+        setUser(updatedUser);
+        return updatedUser;
       },
       async logout() {
         const token = accessToken;

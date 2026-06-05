@@ -1,10 +1,10 @@
 import { CreditCard, Gauge } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "../components/StateBlock";
 import { StatusBadge } from "../components/StatusBadge";
-import { api } from "../lib/api";
+import { api, getApiErrorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatLimit } from "../lib/format";
 import { isOrganizationAdmin, useWorkspace } from "../lib/workspace";
@@ -14,6 +14,7 @@ export function BillingPage() {
   const { selectedOrganization } = useWorkspace();
   const organizationId = selectedOrganization?.id;
   const canInspectBillingProvider = isOrganizationAdmin(selectedOrganization);
+  const billingReturnUrl = `${window.location.origin}/dashboard/plan`;
 
   const plansQuery = useQuery({
     queryKey: ["plans"],
@@ -29,6 +30,28 @@ export function BillingPage() {
     queryKey: ["usage", organizationId],
     queryFn: () => api.usageSummary(accessToken, organizationId!),
   });
+  const checkoutMutation = useMutation({
+    mutationFn: (planSlug: string) =>
+      api.createCheckoutSession(accessToken, {
+        organization_id: organizationId!,
+        plan_slug: planSlug,
+        success_url: billingReturnUrl,
+        cancel_url: billingReturnUrl,
+      }),
+    onSuccess: (session) => {
+      window.location.assign(session.checkout_url);
+    },
+  });
+  const portalMutation = useMutation({
+    mutationFn: () =>
+      api.createCustomerPortalSession(accessToken, {
+        organization_id: organizationId!,
+        return_url: billingReturnUrl,
+      }),
+    onSuccess: (session) => {
+      window.location.assign(session.portal_url);
+    },
+  });
 
   return (
     <>
@@ -39,6 +62,18 @@ export function BillingPage() {
       ) : null}
       {plansQuery.isError || subscriptionQuery.isError || usageQuery.isError ? (
         <ErrorState title="Billing data unavailable" />
+      ) : null}
+      {checkoutMutation.isError ? (
+        <ErrorState
+          detail={getApiErrorMessage(checkoutMutation.error)}
+          title="Checkout unavailable"
+        />
+      ) : null}
+      {portalMutation.isError ? (
+        <ErrorState
+          detail={getApiErrorMessage(portalMutation.error)}
+          title="Customer portal unavailable"
+        />
       ) : null}
 
       <section className="split-grid">
@@ -65,6 +100,14 @@ export function BillingPage() {
               </div>
             ) : null}
           </dl>
+          <button
+            className="secondary-button panel-action"
+            disabled={!organizationId || !canInspectBillingProvider || portalMutation.isPending}
+            onClick={() => portalMutation.mutate()}
+            type="button"
+          >
+            {portalMutation.isPending ? "Opening" : "Manage billing"}
+          </button>
         </div>
 
         <div className="tool-panel">
@@ -104,6 +147,19 @@ export function BillingPage() {
                 </span>
               ))}
             </div>
+            <button
+              className="secondary-button"
+              disabled={
+                !organizationId ||
+                !canInspectBillingProvider ||
+                plan.slug === "free" ||
+                checkoutMutation.isPending
+              }
+              onClick={() => checkoutMutation.mutate(plan.slug)}
+              type="button"
+            >
+              {plan.slug === "free" ? "Current free option" : "Modify plan"}
+            </button>
           </article>
         ))}
       </section>

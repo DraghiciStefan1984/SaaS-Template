@@ -217,3 +217,17 @@ export type ExampleInsightRequest = {
   strategy: string;
   created_at: string;
 };
+
+export type DataDeletionRequest = {
+  id: number;
+  organization: number;
+  requested_by: number | null;
+  target: "account" | "organization";
+  status: string;
+  reason: string;
+  metadata: Record<string, unknown>;
+  scheduled_for: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};

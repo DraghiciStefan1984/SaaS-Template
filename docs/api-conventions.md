@@ -20,10 +20,13 @@ All APIs should use `/api/v1/` as the initial version prefix.
 
 ## Implemented Core Areas
 
-- Auth: registration, login, refresh, logout, current user profile
+- Auth: registration, login, refresh, logout, current user profile, password
+  recovery request, password change
 - Organizations: organization CRUD, members list, invite placeholder
 - Billing: public plan list, organization subscription, checkout placeholder,
   customer portal placeholder, Stripe webhook endpoint
 - Usage: organization usage summary
 - Integrations: provider registry, connected accounts, disconnect action, sync logs
 - AI: provider registry, prompt template list, organization-scoped call logs
+- Privacy: export requests, deletion requests, owner/requester-scoped deletion
+  execution

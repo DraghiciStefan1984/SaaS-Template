@@ -6,11 +6,14 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
+import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { formatLimit } from "../lib/format";
 
-const plans = [
+const fallbackPlans = [
   {
     name: "Free",
     price: "$0",
@@ -45,6 +48,22 @@ const outcomes = [
 
 export function LandingPage() {
   const { isAuthenticated } = useAuth();
+  const plansQuery = useQuery({
+    queryKey: ["public-plans"],
+    queryFn: api.plans,
+  });
+  const plans = plansQuery.data?.length
+    ? plansQuery.data.map((plan) => ({
+        name: plan.name,
+        price: plan.slug === "free" ? "$0" : "TBD",
+        description: plan.description || "Reusable SaaS plan",
+        features: plan.features.length
+          ? plan.features
+          : Object.entries(plan.limits).map(
+              ([metric, limit]) => `${metric.replaceAll("_", " ")}: ${formatLimit(limit)}`,
+            ),
+      }))
+    : fallbackPlans;
 
   return (
     <main className="public-shell">
@@ -179,6 +198,9 @@ export function LandingPage() {
         <div className="section-heading">
           <p className="eyebrow">Plans</p>
           <h2>Free-first now, Stripe-ready later</h2>
+          {plansQuery.isError ? (
+            <p className="section-note">Showing fallback plans until the billing API is available.</p>
+          ) : null}
         </div>
         <div className="pricing-grid">
           {plans.map((plan) => (

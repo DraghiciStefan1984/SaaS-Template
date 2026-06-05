@@ -12,6 +12,8 @@ from .serializers import (
     AccountStatusTokenRefreshSerializer,
     EmailTokenObtainPairSerializer,
     LogoutSerializer,
+    PasswordChangeSerializer,
+    PasswordRecoveryRequestSerializer,
     RegisterSerializer,
     UserSerializer,
 )
@@ -154,6 +156,51 @@ class LogoutView(generics.GenericAPIView):
         response = Response(status=status.HTTP_204_NO_CONTENT)
         _delete_refresh_cookie(response)
         return response
+
+
+class PasswordRecoveryRequestView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]
+    serializer_class = PasswordRecoveryRequestSerializer
+    throttle_scope = "auth"
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+        user = get_user_model().objects.filter(email__iexact=email).first()
+        log_audit_event(
+            action="auth.password_recovery_requested",
+            user=user,
+            request=request,
+            category="auth",
+            metadata={"email_known": bool(user)},
+        )
+        return Response(
+            {
+                "detail": (
+                    "If an account exists for this email, password recovery "
+                    "instructions will be sent when email delivery is configured."
+                )
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class PasswordChangeView(generics.GenericAPIView):
+    serializer_class = PasswordChangeSerializer
+    throttle_scope = "auth"
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        log_audit_event(
+            action="auth.password_changed",
+            user=request.user,
+            request=request,
+            category="auth",
+        )
+        return Response({"detail": "Password changed."})
 
 
 class MeView(generics.RetrieveUpdateAPIView):

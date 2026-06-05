@@ -95,6 +95,8 @@ The first implementation phases will expand the backend apps and frontend shell.
 - `POST /api/v1/auth/refresh/`
 - `POST /api/v1/auth/logout/`
 - `GET/PATCH /api/v1/auth/me/`
+- `POST /api/v1/auth/password/recover/`
+- `POST /api/v1/auth/password/change/`
 - `GET/POST /api/v1/organizations/`
 - `GET/PATCH/DELETE /api/v1/organizations/{id}/`
 - `GET /api/v1/organizations/{id}/members/`
@@ -124,6 +126,9 @@ The first implementation phases will expand the backend apps and frontend shell.
 - `GET /api/v1/reports/{id}/artifacts/`
 - `GET/POST /api/v1/notifications/preferences/`
 - `GET /api/v1/notifications/delivery-logs/?organization_id=...`
+- `GET/POST /api/v1/privacy/exports/`
+- `GET/POST /api/v1/privacy/deletion-requests/`
+- `POST /api/v1/privacy/deletion-requests/{id}/execute/`
 
 ## External Accounts
 

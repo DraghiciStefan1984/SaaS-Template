@@ -382,6 +382,11 @@ h3 {
   margin-bottom: 14px;
 }
 
+.panel-action {
+  width: fit-content;
+  margin-top: 14px;
+}
+
 .compact-list,
 .usage-list,
 .detail-grid,
@@ -869,6 +874,11 @@ td {
   width: min(640px, 100%);
   gap: 8px;
   margin-bottom: 22px;
+}
+
+.section-note {
+  color: #697787;
+  line-height: 1.55;
 }
 
 .section-heading h2,

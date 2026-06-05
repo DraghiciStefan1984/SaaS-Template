@@ -4,6 +4,7 @@ import type {
   AIProvider,
   AITaskProfile,
   AuthResponse,
+  DataDeletionRequest,
   ExampleInsightRequest,
   IntegrationAccount,
   IntegrationProvider,
@@ -173,11 +174,74 @@ export const api = {
       body: {},
     }),
   me: (token: string) => apiRequest<User>("/auth/me/", { token }),
+  updateMe: (token: string, payload: { name: string }) =>
+    apiRequest<User>("/auth/me/", {
+      method: "PATCH",
+      token,
+      body: payload,
+    }),
+  recoverPassword: (email: string) =>
+    apiRequest<{ detail: string }>("/auth/password/recover/", {
+      method: "POST",
+      body: { email },
+    }),
+  changePassword: (
+    token: string,
+    payload: {
+      current_password: string;
+      new_password: string;
+    },
+  ) =>
+    apiRequest<{ detail: string }>("/auth/password/change/", {
+      method: "POST",
+      token,
+      body: payload,
+    }),
   organizations: (token: string) =>
     apiRequest<Paginated<Organization> | Organization[]>("/organizations/", { token }),
+  updateOrganization: (
+    token: string,
+    organizationId: number,
+    payload: {
+      name?: string;
+      timezone?: string;
+      default_language?: string;
+    },
+  ) =>
+    apiRequest<Organization>(`/organizations/${organizationId}/`, {
+      method: "PATCH",
+      token,
+      body: payload,
+    }),
   plans: () => apiRequest<Plan[]>("/billing/plans/"),
   subscription: (token: string, organizationId: number) =>
     apiRequest<Subscription>(`/billing/subscription/?organization_id=${organizationId}`, { token }),
+  createCheckoutSession: (
+    token: string,
+    payload: {
+      organization_id: number;
+      plan_slug: string;
+      success_url?: string;
+      cancel_url?: string;
+    },
+  ) =>
+    apiRequest<{ checkout_url: string; checkout_session_id: string }>("/billing/checkout/", {
+      method: "POST",
+      token,
+      body: payload,
+    }),
+  createCustomerPortalSession: (
+    token: string,
+    payload: {
+      organization_id: number;
+      return_url?: string;
+    },
+  ) =>
+    apiRequest<{ portal_url: string }>("/billing/customer-portal/", {
+      method: "POST",
+      token,
+      body: payload,
+    }),
   usageSummary: (token: string, organizationId: number) =>
     apiRequest<UsageSummary>(`/usage/summary/?organization_id=${organizationId}`, { token }),
   integrationProviders: (token: string) =>
@@ -256,6 +320,24 @@ export const api = {
       `/notifications/delivery-logs/?organization_id=${organizationId}`,
       { token },
     ),
+  dataDeletionRequests: (token: string, organizationId: number) =>
+    apiRequest<Paginated<DataDeletionRequest>>(
+      `/privacy/deletion-requests/?organization_id=${organizationId}`,
+      { token },
+    ),
+  createDataDeletionRequest: (
+    token: string,
+    payload: {
+      organization_id: number;
+      target: "account" | "organization";
+      reason: string;
+    },
+  ) =>
+    apiRequest<DataDeletionRequest>("/privacy/deletion-requests/", {
+      method: "POST",
+      token,
+      body: payload,
+    }),
   exampleInsightRequests: (token: string, organizationId: number) =>
     apiRequest<Paginated<ExampleInsightRequest>>(
       `/products/example-insights/requests/?organization_id=${organizationId}`,

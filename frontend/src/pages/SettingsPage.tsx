@@ -1,19 +1,129 @@
 import { BellRing, CalendarClock, Settings, SlidersHorizontal } from "lucide-react";
-import { useState } from "react";
+import { FormEvent, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { PageHeader } from "../components/PageHeader";
+import { ErrorState, SuccessState } from "../components/StateBlock";
 import { StatusBadge } from "../components/StatusBadge";
+import { api, getApiErrorMessage } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import type { Organization } from "../lib/types";
+import { isOrganizationAdmin, useWorkspace } from "../lib/workspace";
+
+function WorkspaceDefaultsPanel({
+  accessToken,
+  canEditWorkspace,
+  selectedOrganization,
+}: {
+  accessToken: string;
+  canEditWorkspace: boolean;
+  selectedOrganization: Organization | null;
+}) {
+  const queryClient = useQueryClient();
+  const [workspaceName, setWorkspaceName] = useState(selectedOrganization?.name ?? "");
+  const [workspaceTimezone, setWorkspaceTimezone] = useState(
+    selectedOrganization?.timezone ?? "UTC",
+  );
+  const [workspaceLanguage, setWorkspaceLanguage] = useState(
+    selectedOrganization?.default_language ?? "en",
+  );
+
+  const updateOrganizationMutation = useMutation({
+    mutationFn: () =>
+      api.updateOrganization(accessToken, selectedOrganization!.id, {
+        name: workspaceName,
+        timezone: workspaceTimezone,
+        default_language: workspaceLanguage,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["organizations"] });
+    },
+  });
+
+  function handleWorkspaceSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    updateOrganizationMutation.mutate();
+  }
+
+  return (
+    <div className="tool-panel">
+      <div className="panel-heading">
+        <h2>Workspace Defaults</h2>
+        <StatusBadge value={canEditWorkspace ? "editable" : "admin only"} />
+      </div>
+      {updateOrganizationMutation.isError ? (
+        <ErrorState
+          detail={getApiErrorMessage(updateOrganizationMutation.error)}
+          title="Workspace settings failed"
+        />
+      ) : null}
+      {updateOrganizationMutation.isSuccess ? <SuccessState title="Workspace settings saved" /> : null}
+      <form className="form-grid" onSubmit={handleWorkspaceSave}>
+        <label>
+          Workspace name
+          <input
+            disabled={!canEditWorkspace}
+            onChange={(event) => setWorkspaceName(event.target.value)}
+            required
+            type="text"
+            value={workspaceName}
+          />
+        </label>
+        <label>
+          Workspace timezone
+          <select
+            disabled={!canEditWorkspace}
+            onChange={(event) => setWorkspaceTimezone(event.target.value)}
+            value={workspaceTimezone}
+          >
+            <option value="UTC">UTC</option>
+            <option value="Europe/Bucharest">Europe/Bucharest</option>
+            <option value="America/New_York">America/New_York</option>
+          </select>
+        </label>
+        <label>
+          Default language
+          <select
+            disabled={!canEditWorkspace}
+            onChange={(event) => setWorkspaceLanguage(event.target.value)}
+            value={workspaceLanguage}
+          >
+            <option value="en">English</option>
+            <option value="ro">Romanian</option>
+          </select>
+        </label>
+        <button
+          className="secondary-button"
+          disabled={!canEditWorkspace || updateOrganizationMutation.isPending}
+          type="submit"
+        >
+          {updateOrganizationMutation.isPending ? "Saving" : "Save workspace"}
+        </button>
+      </form>
+    </div>
+  );
+}
 
 export function SettingsPage() {
+  const { accessToken } = useAuth();
+  const { selectedOrganization } = useWorkspace();
   const [frequency, setFrequency] = useState("weekly");
   const [timezone, setTimezone] = useState("UTC");
   const [summaryStyle, setSummaryStyle] = useState("concise");
+  const canEditWorkspace = isOrganizationAdmin(selectedOrganization);
 
   return (
     <>
       <PageHeader eyebrow="Settings" icon={Settings} title="Product Settings" />
 
       <section className="settings-grid">
+        <WorkspaceDefaultsPanel
+          accessToken={accessToken}
+          canEditWorkspace={canEditWorkspace}
+          key={selectedOrganization?.id ?? "no-organization"}
+          selectedOrganization={selectedOrganization}
+        />
+
         <div className="tool-panel">
           <div className="panel-heading">
             <h2>Workflow</h2>

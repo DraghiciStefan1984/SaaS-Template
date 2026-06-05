@@ -1,14 +1,28 @@
-import { Mail, Phone, UserRound } from "lucide-react";
+import { Mail, Save, UserRound } from "lucide-react";
+import { FormEvent, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 
 import { PageHeader } from "../components/PageHeader";
+import { ErrorState, SuccessState } from "../components/StateBlock";
 import { StatusBadge } from "../components/StatusBadge";
+import { getApiErrorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatDate } from "../lib/format";
 import { useWorkspace } from "../lib/workspace";
 
 export function AccountPage() {
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const { selectedOrganization } = useWorkspace();
+  const [name, setName] = useState(user?.name ?? "");
+
+  const updateProfileMutation = useMutation({
+    mutationFn: () => updateProfile({ name }),
+  });
+
+  function handleProfileSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    updateProfileMutation.mutate();
+  }
 
   return (
     <>
@@ -53,22 +67,42 @@ export function AccountPage() {
             <h2>Contact</h2>
             <Mail aria-hidden="true" size={18} />
           </div>
-          <form className="form-grid">
+          {updateProfileMutation.isError ? (
+            <ErrorState
+              detail={getApiErrorMessage(updateProfileMutation.error)}
+              title="Profile update failed"
+            />
+          ) : null}
+          {updateProfileMutation.isSuccess ? <SuccessState title="Profile updated" /> : null}
+          <form className="form-grid" onSubmit={handleProfileSave}>
+            <label>
+              Name
+              <input
+                autoComplete="name"
+                onChange={(event) => setName(event.target.value)}
+                type="text"
+                value={name}
+              />
+            </label>
             <label>
               Contact email
               <input readOnly type="email" value={user?.email ?? ""} />
             </label>
             <label>
               Phone
-              <input placeholder="Not set" readOnly type="tel" />
+              <input placeholder="Not modeled in the core user profile" readOnly type="tel" />
             </label>
             <label>
               Organization
               <input readOnly type="text" value={selectedOrganization?.name ?? ""} />
             </label>
-            <button className="secondary-button" disabled type="button">
-              <Phone aria-hidden="true" size={18} />
-              Save contact
+            <button
+              className="secondary-button"
+              disabled={updateProfileMutation.isPending}
+              type="submit"
+            >
+              <Save aria-hidden="true" size={18} />
+              {updateProfileMutation.isPending ? "Saving" : "Save profile"}
             </button>
           </form>
         </div>

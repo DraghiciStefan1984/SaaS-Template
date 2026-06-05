@@ -149,6 +149,85 @@ def test_logout_blacklists_refresh_token(django_user_model):
     assert refresh_response.status_code == 401
 
 
+def test_password_recovery_request_returns_generic_response(django_user_model):
+    user = make_user(django_user_model, email="recover@example.com", password="SaaSCore!23456")
+    client = APIClient()
+
+    response = client.post(
+        "/api/v1/auth/password/recover/",
+        {"email": user.email},
+        format="json",
+    )
+    unknown_response = client.post(
+        "/api/v1/auth/password/recover/",
+        {"email": "unknown@example.com"},
+        format="json",
+    )
+
+    assert response.status_code == 202
+    assert unknown_response.status_code == 202
+    assert response.json()["detail"] == unknown_response.json()["detail"]
+    assert AuditLog.objects.filter(action="auth.password_recovery_requested").count() == 2
+
+
+def test_authenticated_user_can_change_password(django_user_model):
+    user = make_user(django_user_model, email="change-password@example.com")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.post(
+        "/api/v1/auth/password/change/",
+        {
+            "current_password": "SaaSCore!23456",
+            "new_password": "NewSaaSCore!23456",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    user.refresh_from_db()
+    assert user.check_password("NewSaaSCore!23456")
+    assert AuditLog.objects.filter(action="auth.password_changed", user=user).exists()
+
+
+def test_password_change_requires_current_password(django_user_model):
+    user = make_user(django_user_model, email="bad-current-password@example.com")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.post(
+        "/api/v1/auth/password/change/",
+        {
+            "current_password": "WrongPassword!23456",
+            "new_password": "NewSaaSCore!23456",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    user.refresh_from_db()
+    assert user.check_password("SaaSCore!23456")
+
+
+def test_authenticated_user_can_update_profile_name(django_user_model):
+    user = make_user(django_user_model, email="profile@example.com", name="Old Name")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.patch(
+        "/api/v1/auth/me/",
+        {"name": "New Name", "email": "changed@example.com"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "New Name"
+    assert response.json()["email"] == "profile@example.com"
+    user.refresh_from_db()
+    assert user.name == "New Name"
+    assert user.email == "profile@example.com"
+
+
 def test_refresh_endpoint_accepts_httponly_cookie_and_rotates_cookie(django_user_model):
     user = make_user(
         django_user_model,
