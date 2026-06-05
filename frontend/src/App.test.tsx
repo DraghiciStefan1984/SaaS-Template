@@ -6,8 +6,19 @@ import { normalizeApiBaseUrl } from "./lib/api";
 import { isOrganizationAdmin } from "./lib/workspace";
 
 describe("App", () => {
+  it("renders the public landing page at the root route", () => {
+    sessionStorage.clear();
+    window.history.pushState({}, "", "/");
+    render(<App />);
+
+    expect(
+      screen.getByRole("heading", { name: "Launch clear SaaS products from one stable core" }),
+    ).toBeInTheDocument();
+  });
+
   it("renders the unauthenticated login screen", () => {
     sessionStorage.clear();
+    window.history.pushState({}, "", "/login");
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Workspace Login" })).toBeInTheDocument();

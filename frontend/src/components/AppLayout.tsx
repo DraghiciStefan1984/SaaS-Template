@@ -8,6 +8,10 @@ import {
   LogOut,
   Mail,
   PlugZap,
+  Settings,
+  ShieldCheck,
+  Trash2,
+  UserRound,
 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
@@ -16,13 +20,17 @@ import type { Organization } from "../lib/types";
 import type { WorkspaceContext } from "../lib/workspace";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: Gauge },
-  { to: "/billing", label: "Billing", icon: CreditCard },
-  { to: "/integrations", label: "Integrations", icon: PlugZap },
-  { to: "/ai", label: "AI", icon: Bot },
-  { to: "/reports", label: "Reports", icon: FileText },
-  { to: "/notifications", label: "Notifications", icon: Mail },
-  { to: "/example-product", label: "Example Product", icon: FlaskConical },
+  { to: "/dashboard", label: "Overview", icon: Gauge },
+  { to: "/dashboard/product", label: "Product", icon: FlaskConical },
+  { to: "/dashboard/reports", label: "Reports", icon: FileText },
+  { to: "/dashboard/account", label: "Account", icon: UserRound },
+  { to: "/dashboard/settings", label: "Settings", icon: Settings },
+  { to: "/dashboard/plan", label: "Plan", icon: CreditCard },
+  { to: "/dashboard/security", label: "Security", icon: ShieldCheck },
+  { to: "/dashboard/integrations", label: "Integrations", icon: PlugZap },
+  { to: "/dashboard/notifications", label: "Notifications", icon: Mail },
+  { to: "/dashboard/ai", label: "AI Layer", icon: Bot },
+  { to: "/dashboard/danger-zone", label: "Danger Zone", icon: Trash2 },
 ];
 
 export function AppLayout({
@@ -55,7 +63,7 @@ export function AppLayout({
             return (
               <NavLink
                 className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
-                end={item.to === "/"}
+                end={item.to === "/dashboard"}
                 key={item.to}
                 to={item.to}
               >

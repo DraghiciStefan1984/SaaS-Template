@@ -32,7 +32,7 @@ export function BillingPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Billing" icon={CreditCard} title="Plan and Usage" />
+      <PageHeader eyebrow="Plan" icon={CreditCard} title="Plan and Usage" />
 
       {plansQuery.isLoading || subscriptionQuery.isLoading || usageQuery.isLoading ? (
         <LoadingState title="Loading billing data" />

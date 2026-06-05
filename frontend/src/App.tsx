@@ -10,11 +10,17 @@ import type { Organization } from "./lib/types";
 import { AIPage } from "./pages/AIPage";
 import { AuthPage } from "./pages/AuthPage";
 import { BillingPage } from "./pages/BillingPage";
+import { AccountPage } from "./pages/AccountPage";
+import { DangerZonePage } from "./pages/DangerZonePage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ExampleProductPage } from "./pages/ExampleProductPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
+import { LandingPage } from "./pages/LandingPage";
+import { LegalPage } from "./pages/LegalPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ReportsPage } from "./pages/ReportsPage";
+import { SecurityPage } from "./pages/SecurityPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,7 +62,7 @@ function ProtectedWorkspace() {
   }
 
   if (!isAuthenticated) {
-    return <Navigate replace to="/auth" />;
+    return <Navigate replace to="/login" />;
   }
 
   if (organizationsQuery.isError) {
@@ -80,16 +86,32 @@ function ProtectedWorkspace() {
 function AppRoutes() {
   return (
     <Routes>
-      <Route element={<AuthPage />} path="/auth" />
-      <Route element={<ProtectedWorkspace />}>
+      <Route element={<LandingPage />} path="/" />
+      <Route element={<LegalPage />} path="/terms" />
+      <Route element={<Navigate replace to="/login" />} path="/auth" />
+      <Route element={<AuthPage initialMode="login" />} path="/login" />
+      <Route element={<AuthPage initialMode="register" />} path="/register" />
+      <Route element={<AuthPage initialMode="recover" />} path="/recover-password" />
+      <Route element={<ProtectedWorkspace />} path="/dashboard">
         <Route element={<DashboardPage />} index />
-        <Route element={<BillingPage />} path="billing" />
-        <Route element={<IntegrationsPage />} path="integrations" />
-        <Route element={<AIPage />} path="ai" />
+        <Route element={<ExampleProductPage />} path="product" />
         <Route element={<ReportsPage />} path="reports" />
+        <Route element={<AccountPage />} path="account" />
+        <Route element={<SettingsPage />} path="settings" />
+        <Route element={<BillingPage />} path="plan" />
+        <Route element={<SecurityPage />} path="security" />
+        <Route element={<IntegrationsPage />} path="integrations" />
         <Route element={<NotificationsPage />} path="notifications" />
-        <Route element={<ExampleProductPage />} path="example-product" />
+        <Route element={<AIPage />} path="ai" />
+        <Route element={<DangerZonePage />} path="danger-zone" />
       </Route>
+      <Route element={<Navigate replace to="/dashboard" />} path="/app" />
+      <Route element={<Navigate replace to="/dashboard/plan" />} path="/billing" />
+      <Route element={<Navigate replace to="/dashboard/integrations" />} path="/integrations" />
+      <Route element={<Navigate replace to="/dashboard/ai" />} path="/ai" />
+      <Route element={<Navigate replace to="/dashboard/reports" />} path="/reports" />
+      <Route element={<Navigate replace to="/dashboard/notifications" />} path="/notifications" />
+      <Route element={<Navigate replace to="/dashboard/product" />} path="/example-product" />
       <Route element={<Navigate replace to="/" />} path="*" />
     </Routes>
   );

@@ -1257,6 +1257,43 @@ External/not configured:
   observability remain intentionally unconfigured placeholders.
 
 
+2026-06-05 - Frontend Phase 1: Public and Dashboard Structure
+-------------------------------------------------------------
+Changed:
+- Added the public Home/Landing page as the root route with product name,
+  slogan, short explanation, demo preview, how-it-works flow, plan cards,
+  FAQ, login/register CTAs, and footer contact/legal links.
+- Added a public Terms/Privacy/AI Disclaimer/Liability page.
+- Split auth routing into login, register, and recover-password entry points,
+  while keeping /auth as a compatibility redirect.
+- Moved the authenticated workspace under /dashboard and added compatibility
+  redirects from older top-level app routes.
+- Expanded the dashboard shell navigation to match the standard SaaS structure:
+  Overview, Product, Reports, Account, Settings, Plan, Security, Integrations,
+  Notifications, AI Layer, and Danger Zone.
+- Added structural Account, Settings, Security, and Danger Zone pages without
+  wiring new write actions to backend endpoints yet.
+- Updated frontend unit and Playwright smoke-test expectations for the new
+  public landing entry point.
+
+Verification:
+- npm.cmd run frontend:typecheck passed.
+- npm.cmd run frontend:lint passed.
+- npm.cmd run frontend:test passed: 5 tests.
+- npm.cmd run frontend:build passed.
+- Browser smoke test against http://127.0.0.1:5173/ passed for Home/Landing,
+  login, terms, and unauthenticated dashboard redirect.
+- npm.cmd --prefix frontend run e2e was attempted but could not run because the
+  local Playwright Chromium executable is not installed.
+
+External/not configured:
+- Phase 2 still needs explicit endpoint wiring for editable account/contact
+  fields, product settings persistence, password recovery/change, deletion
+  request actions, and dynamic public plan rendering where appropriate.
+- Stripe, AWS, OpenAI, optional AI providers, and real email delivery remain
+  intentionally unconfigured placeholders.
+
+
 Release Candidate Status
 ------------------------
 Template v1 release candidate is ready for local review.

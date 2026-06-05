@@ -104,7 +104,7 @@ export function DashboardPage() {
 
   return (
     <>
-      <PageHeader eyebrow={selectedOrganization.name} icon={BriefcaseBusiness} title="Core Dashboard" />
+      <PageHeader eyebrow={selectedOrganization.name} icon={BriefcaseBusiness} title="Workspace Overview" />
 
       {isLoading ? <LoadingState title="Loading workspace data" /> : null}
       {hasError ? <ErrorState title="Workspace data unavailable" /> : null}
@@ -137,6 +137,28 @@ export function DashboardPage() {
       </section>
 
       <section className="split-grid">
+        <div className="tool-panel">
+          <div className="panel-heading">
+            <h2>Next Actions</h2>
+          </div>
+          <div className="compact-list">
+            <div className="compact-row">
+              <div>
+                <strong>Configure product settings</strong>
+                <span>Review workflow, schedule, and delivery defaults</span>
+              </div>
+              <StatusBadge value="settings" />
+            </div>
+            <div className="compact-row">
+              <div>
+                <strong>Generate a report</strong>
+                <span>Use the reports or product section to create a workflow run</span>
+              </div>
+              <StatusBadge value="report" />
+            </div>
+          </div>
+        </div>
+
         <div className="tool-panel">
           <div className="panel-heading">
             <h2>Usage</h2>

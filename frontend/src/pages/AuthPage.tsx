@@ -1,22 +1,24 @@
-import { LockKeyhole, UserPlus } from "lucide-react";
+import { KeyRound, LockKeyhole, UserPlus } from "lucide-react";
 import { FormEvent, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 
+import { LoadingState, SuccessState } from "../components/StateBlock";
 import { getApiErrorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { LoadingState } from "../components/StateBlock";
 
-type AuthMode = "login" | "register";
+type AuthMode = "login" | "register" | "recover";
 
-export function AuthPage() {
+export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
   const navigate = useNavigate();
   const { isAuthenticated, isBootstrapping, login, register } = useAuth();
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [organizationName, setOrganizationName] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (isBootstrapping) {
@@ -28,16 +30,20 @@ export function AuthPage() {
   }
 
   if (isAuthenticated) {
-    return <Navigate replace to="/" />;
+    return <Navigate replace to="/dashboard" />;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setSuccess("");
     setIsSubmitting(true);
     try {
-      if (mode === "login") {
+      if (mode === "recover") {
+        setSuccess("If the account exists, password recovery instructions will be sent.");
+      } else if (mode === "login") {
         await login(email, password);
+        navigate("/dashboard");
       } else {
         await register({
           email,
@@ -45,8 +51,8 @@ export function AuthPage() {
           name,
           organization_name: organizationName,
         });
+        navigate("/dashboard");
       }
-      navigate("/");
     } catch (caughtError) {
       setError(getApiErrorMessage(caughtError, "Authentication request failed."));
     } finally {
@@ -54,11 +60,27 @@ export function AuthPage() {
     }
   }
 
-  const Icon = mode === "login" ? LockKeyhole : UserPlus;
+  function handleModeChange(nextMode: AuthMode) {
+    setError("");
+    setSuccess("");
+    setMode(nextMode);
+    navigate(
+      nextMode === "login"
+        ? "/login"
+        : nextMode === "register"
+          ? "/register"
+          : "/recover-password",
+    );
+  }
+
+  const Icon = mode === "login" ? LockKeyhole : mode === "register" ? UserPlus : KeyRound;
 
   return (
     <main className="auth-layout">
       <section className="auth-panel">
+        <Link className="auth-home-link" to="/">
+          Home
+        </Link>
         <div className="brand-row">
           <div className="brand-mark">SC</div>
           <div>
@@ -72,8 +94,16 @@ export function AuthPage() {
             <Icon aria-hidden="true" size={20} />
           </span>
           <div>
-            <p className="eyebrow">{mode === "login" ? "Sign in" : "Create account"}</p>
-            <h1>{mode === "login" ? "Workspace Login" : "New Workspace"}</h1>
+            <p className="eyebrow">
+              {mode === "login" ? "Sign in" : mode === "register" ? "Create account" : "Recover"}
+            </p>
+            <h1>
+              {mode === "login"
+                ? "Workspace Login"
+                : mode === "register"
+                  ? "New Workspace"
+                  : "Recover Password"}
+            </h1>
           </div>
         </div>
 
@@ -81,7 +111,7 @@ export function AuthPage() {
           <button
             aria-selected={mode === "login"}
             className={mode === "login" ? "active" : ""}
-            onClick={() => setMode("login")}
+            onClick={() => handleModeChange("login")}
             role="tab"
             type="button"
           >
@@ -90,11 +120,20 @@ export function AuthPage() {
           <button
             aria-selected={mode === "register"}
             className={mode === "register" ? "active" : ""}
-            onClick={() => setMode("register")}
+            onClick={() => handleModeChange("register")}
             role="tab"
             type="button"
           >
             Register
+          </button>
+          <button
+            aria-selected={mode === "recover"}
+            className={mode === "recover" ? "active" : ""}
+            onClick={() => handleModeChange("recover")}
+            role="tab"
+            type="button"
+          >
+            Recover
           </button>
         </div>
 
@@ -132,24 +171,55 @@ export function AuthPage() {
               value={email}
             />
           </label>
-          <label>
-            Password
-            <input
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              minLength={8}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              type="password"
-              value={password}
-            />
-          </label>
+          {mode !== "recover" ? (
+            <label>
+              Password
+              <input
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                minLength={8}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                type="password"
+                value={password}
+              />
+            </label>
+          ) : null}
+
+          {mode === "register" ? (
+            <label className="checkbox-control">
+              <input
+                checked={acceptedTerms}
+                onChange={(event) => setAcceptedTerms(event.target.checked)}
+                required
+                type="checkbox"
+              />
+              <span>
+                I accept the <Link to="/terms">terms and privacy rules</Link>.
+              </span>
+            </label>
+          ) : null}
 
           {error ? <div className="inline-error">{error}</div> : null}
+          {success ? <SuccessState title={success} /> : null}
 
           <button className="primary-button" disabled={isSubmitting} type="submit">
-            {isSubmitting ? "Submitting" : mode === "login" ? "Login" : "Register"}
+            {isSubmitting
+              ? "Submitting"
+              : mode === "login"
+                ? "Login"
+                : mode === "register"
+                  ? "Register"
+                  : "Send recovery email"}
           </button>
         </form>
+
+        <div className="auth-footer">
+          {mode === "login" ? (
+            <Link to="/recover-password">Forgot password?</Link>
+          ) : (
+            <Link to="/login">Already registered?</Link>
+          )}
+        </div>
       </section>
     </main>
   );
