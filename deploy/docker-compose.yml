@@ -31,9 +31,8 @@ services:
 
   backend:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile.backend
-      target: development
+      context: ../backend
+      dockerfile: ../deploy/Dockerfile.backend.dev
     # TODO(external-service): In production, replace local Postgres/Redis with
     # AWS RDS and ElastiCache endpoints from Secrets Manager or task env vars.
     # TODO(api-key): Keep Stripe/OpenAI/AWS/email keys out of images and pass
@@ -66,9 +65,8 @@ services:
 
   celery_worker:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile.backend
-      target: development
+      context: ../backend
+      dockerfile: ../deploy/Dockerfile.backend.dev
     command: celery -A config worker --loglevel=info
     working_dir: /app/backend
     env_file:
@@ -85,13 +83,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      disable: true
 
   celery_beat:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile.backend
-      target: development
-    command: celery -A config beat --loglevel=info
+      context: ../backend
+      dockerfile: ../deploy/Dockerfile.backend.dev
+    command: celery -A config beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     working_dir: /app/backend
     env_file:
       - ../backend/.env.example
@@ -107,12 +106,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      disable: true
 
   frontend:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile.frontend
-      target: development
+      context: ../frontend
+      dockerfile: ../deploy/Dockerfile.frontend.dev
     # TODO(deployment): For production, build the production target and set
     # VITE_API_BASE_URL to the public backend/API Gateway URL for that SaaS.
     env_file:

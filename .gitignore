@@ -99,6 +99,7 @@ frontend/*.tsbuildinfo
 .docker/
 docker-compose.override.yml
 *.pid
+celerybeat-schedule*
 
 # Logs
 *.log

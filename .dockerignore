@@ -5,6 +5,26 @@
 .mypy_cache
 .tox
 .nox
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.tox
+**/.nox
+backend/.pytest_cache
+backend/.pytest_cache/
+backend/.pytest_cache/**
+backend/.ruff_cache
+backend/.ruff_cache/
+backend/.ruff_cache/**
+backend/.mypy_cache
+backend/.mypy_cache/
+backend/.mypy_cache/**
+backend/.tox
+backend/.tox/
+backend/.tox/**
+backend/.nox
+backend/.nox/
+backend/.nox/**
 
 .env
 .env.*

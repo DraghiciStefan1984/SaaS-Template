@@ -1190,6 +1190,73 @@ External/not configured:
 - No new markdown documents were created in this phase.
 
 
+2026-06-05 - Local Docker Runtime Validation
+--------------------------------------------
+Changed:
+- Added backend and frontend Docker ignore files for development build contexts.
+- Added development-specific backend and frontend Dockerfiles used by local
+  Docker Compose.
+- Updated local Docker Compose build contexts to backend/ and frontend/ so
+  local test/lint cache folders outside each runtime context do not block Docker
+  build on Windows.
+- Disabled inherited HTTP healthchecks for Celery worker and beat services;
+  those services do not expose the backend HTTP health endpoint.
+- Expanded root .dockerignore cache rules for recursive Python/test cache
+  folders.
+- Increased the local placeholder DJANGO_SECRET_KEY length in backend/.env.example
+  so local JWT checks do not emit short-HMAC-key warnings.
+
+Verification:
+- docker compose config passed.
+- docker compose build passed.
+- docker compose up -d started Postgres, Redis, backend, frontend, Celery
+  worker, and Celery beat.
+- Demo readiness passed with migrations and seed data.
+- Backend health and readiness endpoints returned ok/ready.
+- Frontend returned HTTP 200 at http://127.0.0.1:5173/.
+- Celery worker connected to Redis and reported ready; Celery beat started.
+- Demo readiness passed again after backend/Celery recreation with the longer
+  local placeholder secret.
+
+External/not configured:
+- Stripe, AWS, OpenAI, and real email provider keys remain intentionally empty
+  for local free/demo testing.
+- Local email remains console-mode; delivery is tracked in notification logs,
+  not sent to a real inbox yet.
+
+
+2026-06-05 - Specification Consolidation: Source of Truth
+---------------------------------------------------------
+Changed:
+- Consolidated the main Word specification document into a single source of
+  truth for the SaaS Core Template.
+- Integrated the public/authenticated page structure agreed in the conversation:
+  Home/Landing as the public entry point, login/register/password flows,
+  dashboard sections, legal/disclaimer/terms/liability, and optional tutorial
+  guidance.
+- Aligned the specification with the current implementation stack:
+  Django/DRF, PostgreSQL, Celery/Redis, React/TypeScript/Vite, Docker Compose,
+  Stripe-ready billing, AWS deployment target, OpenAPI/Postman, backend-only AI,
+  and provider abstractions.
+- Reconciled the current specification with the earlier backup documents and
+  the repository docs for architecture, API conventions, security, testing,
+  product workflow, external accounts, deployment, billing/usage, AI, reports,
+  jobs, and notifications.
+- Kept the backup Word documents unchanged.
+
+Verification:
+- Extracted and reviewed the main Word specification and both backup Word
+  documents before consolidation.
+- Re-read the updated Word document text after generation and verified that the
+  consolidated sections are present.
+- No code tests were run because this was a documentation-only update.
+
+External/not configured:
+- No new markdown documents were created.
+- Stripe, AWS, OpenAI, optional AI providers, real email delivery, domains, and
+  observability remain intentionally unconfigured placeholders.
+
+
 Release Candidate Status
 ------------------------
 Template v1 release candidate is ready for local review.
