@@ -101,6 +101,10 @@ class LogoutSerializer(serializers.Serializer):
             self.token.blacklist()
 
 
+class DetailResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+
+
 class PasswordRecoveryRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
 

@@ -1345,6 +1345,32 @@ External/not configured:
   observability remain intentionally unconfigured placeholders.
 
 
+2026-06-05 - Code Review Remediation: Password Token Revocation and OpenAPI
+----------------------------------------------------------------------------
+Changed:
+- Password change now blacklists all outstanding refresh tokens for the user
+  after a successful password update.
+- Password change now clears the HttpOnly refresh cookie in the response so the
+  current browser session cannot silently refresh with the old token.
+- Password recovery and password change now declare explicit OpenAPI response
+  schemas for their `{ detail }` responses, including the `202` recovery status.
+- Added regression coverage for password change revoking an existing refresh
+  token issued by login.
+
+Verification:
+- npm.cmd run backend:test -- tests/test_auth_and_organizations.py passed:
+  17 tests.
+- npm.cmd run backend:lint passed.
+- npm.cmd run backend:check passed.
+- npm.cmd run backend:migrations:check passed.
+- npm.cmd run release:check passed, including OpenAPI validation, full backend
+  pytest: 119 tests, and frontend lint/typecheck/test/build.
+
+External/not configured:
+- Stripe, AWS, OpenAI, optional AI providers, real email delivery, domains, and
+  observability remain intentionally unconfigured placeholders.
+
+
 Release Candidate Status
 ------------------------
 Template v1 release candidate is ready for local review.

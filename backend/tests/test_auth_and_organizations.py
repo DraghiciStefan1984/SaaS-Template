@@ -170,10 +170,22 @@ def test_password_recovery_request_returns_generic_response(django_user_model):
     assert AuditLog.objects.filter(action="auth.password_recovery_requested").count() == 2
 
 
-def test_authenticated_user_can_change_password(django_user_model):
-    user = make_user(django_user_model, email="change-password@example.com")
+def test_authenticated_user_can_change_password_and_revoke_refresh_tokens(django_user_model):
+    user = make_user(
+        django_user_model,
+        email="change-password@example.com",
+        password="SaaSCore!23456",
+    )
     client = APIClient()
-    client.force_authenticate(user=user)
+    login_response = client.post(
+        "/api/v1/auth/login/",
+        {"email": user.email, "password": "SaaSCore!23456"},
+        format="json",
+    )
+    access_token = login_response.json()["access"]
+    refresh_token = login_response.cookies[settings.AUTH_REFRESH_COOKIE_NAME].value
+    client.cookies[settings.AUTH_REFRESH_COOKIE_NAME] = refresh_token
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
 
     response = client.post(
         "/api/v1/auth/password/change/",
@@ -185,9 +197,18 @@ def test_authenticated_user_can_change_password(django_user_model):
     )
 
     assert response.status_code == 200
+    assert response.cookies[settings.AUTH_REFRESH_COOKIE_NAME].value == ""
     user.refresh_from_db()
     assert user.check_password("NewSaaSCore!23456")
     assert AuditLog.objects.filter(action="auth.password_changed", user=user).exists()
+
+    refresh_response = client.post(
+        "/api/v1/auth/refresh/",
+        {"refresh": refresh_token},
+        format="json",
+    )
+
+    assert refresh_response.status_code == 401
 
 
 def test_password_change_requires_current_password(django_user_model):

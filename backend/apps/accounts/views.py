@@ -1,7 +1,10 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import transaction
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -10,6 +13,7 @@ from apps.organizations.serializers import OrganizationSerializer
 
 from .serializers import (
     AccountStatusTokenRefreshSerializer,
+    DetailResponseSerializer,
     EmailTokenObtainPairSerializer,
     LogoutSerializer,
     PasswordChangeSerializer,
@@ -55,6 +59,11 @@ def _mutable_request_data(request):
     if hasattr(request.data, "copy"):
         return request.data.copy()
     return dict(request.data)
+
+
+def _blacklist_user_refresh_tokens(user):
+    for outstanding_token in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=outstanding_token)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -163,6 +172,10 @@ class PasswordRecoveryRequestView(generics.GenericAPIView):
     serializer_class = PasswordRecoveryRequestSerializer
     throttle_scope = "auth"
 
+    @extend_schema(
+        request=PasswordRecoveryRequestSerializer,
+        responses={status.HTTP_202_ACCEPTED: DetailResponseSerializer},
+    )
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -190,17 +203,25 @@ class PasswordChangeView(generics.GenericAPIView):
     serializer_class = PasswordChangeSerializer
     throttle_scope = "auth"
 
+    @extend_schema(
+        request=PasswordChangeSerializer,
+        responses={status.HTTP_200_OK: DetailResponseSerializer},
+    )
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        with transaction.atomic():
+            user = serializer.save()
+            _blacklist_user_refresh_tokens(user)
         log_audit_event(
             action="auth.password_changed",
             user=request.user,
             request=request,
             category="auth",
         )
-        return Response({"detail": "Password changed."})
+        response = Response({"detail": "Password changed."})
+        _delete_refresh_cookie(response)
+        return response
 
 
 class MeView(generics.RetrieveUpdateAPIView):
