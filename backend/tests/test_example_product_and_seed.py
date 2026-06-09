@@ -2,6 +2,7 @@ from io import StringIO
 
 import pytest
 from django.contrib.auth import authenticate
+from django.core.cache import cache
 from django.core.management import call_command
 from rest_framework.test import APIClient
 
@@ -272,6 +273,7 @@ def test_seed_dev_data_creates_notification_demo_state():
 
 
 def test_check_demo_ready_with_seed_validates_local_api_flow():
+    cache.clear()
     stdout = StringIO()
 
     call_command("check_demo_ready", seed=True, stdout=stdout)

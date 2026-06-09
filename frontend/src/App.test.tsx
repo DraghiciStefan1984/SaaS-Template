@@ -24,6 +24,22 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Workspace Login" })).toBeInTheDocument();
   });
 
+  it("renders the password reset screen from a recovery link", () => {
+    sessionStorage.clear();
+    window.history.pushState({}, "", "/reset-password?uid=test-user&token=test-token");
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "Reset Password" })).toBeInTheDocument();
+  });
+
+  it("renders the email verification screen", () => {
+    sessionStorage.clear();
+    window.history.pushState({}, "", "/verify-email");
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "Verify Email" })).toBeInTheDocument();
+  });
+
   it("does not retain access tokens in browser storage", async () => {
     sessionStorage.setItem("saas_core_access_token", "legacy-access-token");
     render(<App />);

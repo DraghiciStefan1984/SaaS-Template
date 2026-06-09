@@ -31,6 +31,7 @@ def clear_relevant_env(monkeypatch):
         "SENTRY_DSN",
         "STRIPE_SECRET_KEY",
         "STRIPE_WEBHOOK_SECRET",
+        "GOOGLE_OAUTH_CLIENT_ID",
     }:
         monkeypatch.delenv(key, raising=False)
 
@@ -100,6 +101,15 @@ def test_check_deploy_ready_requires_observability_values_when_enabled(monkeypat
 
     assert "SENTRY_DSN" in str(exc.value)
     assert "DEPLOY_VERSION" in str(exc.value)
+
+
+def test_check_deploy_ready_requires_google_client_id_when_enabled(monkeypatch):
+    set_base_env(monkeypatch)
+
+    with pytest.raises(CommandError) as exc:
+        call_command("check_deploy_ready", require_google_login=True)
+
+    assert "GOOGLE_OAUTH_CLIENT_ID" in str(exc.value)
 
 
 def test_check_deploy_ready_accepts_production_observability_values(monkeypatch):

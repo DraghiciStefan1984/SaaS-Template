@@ -60,6 +60,21 @@ def provider_health_check(provider):
     return {"status": "ok", "detail": "Provider registry entry is available."}
 
 
+def _upsert_integration_credential(account, credential_type, credential_payload):
+    credential = IntegrationCredential.objects.filter(integration_account=account).first()
+    encrypted_payload = encrypt_credential_payload(credential_payload)
+    if credential:
+        credential.credential_type = credential_type or credential.credential_type
+        credential.encrypted_payload = encrypted_payload
+        credential.save(update_fields=["credential_type", "encrypted_payload", "updated_at"])
+        return credential
+    return IntegrationCredential.objects.create(
+        integration_account=account,
+        credential_type=credential_type or CredentialType.API_KEY,
+        encrypted_payload=encrypted_payload,
+    )
+
+
 @transaction.atomic
 def connect_integration_account(
     *,
@@ -105,19 +120,64 @@ def connect_integration_account(
     )
 
     if credential_payload:
-        credential = IntegrationCredential.objects.filter(integration_account=account).first()
-        encrypted_payload = encrypt_credential_payload(credential_payload)
-        if credential:
-            credential.credential_type = credential_type or credential.credential_type
-            credential.encrypted_payload = encrypted_payload
-            credential.save(update_fields=["credential_type", "encrypted_payload", "updated_at"])
-        else:
-            IntegrationCredential.objects.create(
-                integration_account=account,
-                credential_type=credential_type or CredentialType.API_KEY,
-                encrypted_payload=encrypted_payload,
-            )
+        _upsert_integration_credential(account, credential_type, credential_payload)
 
+    return account
+
+
+@transaction.atomic
+def reconnect_integration_account(
+    account,
+    *,
+    connected_by,
+    external_account_id="",
+    display_name="",
+    scopes=None,
+    credential_type=None,
+    credential_payload=None,
+):
+    provider = account.provider
+    if not provider.is_active:
+        raise ValidationError({"provider": "This provider is disabled."})
+    if credential_payload is not None and not isinstance(credential_payload, dict):
+        raise ValidationError({"credential_payload": "Expected a JSON object."})
+    if provider.auth_type == ProviderAuthType.OAUTH2 and not credential_payload:
+        # TODO(oauth): Exchange an authorization code through the provider
+        # client after OAuth client ID/secret and redirect URI are configured.
+        raise IntegrationProviderNotConfigured()
+    if provider.auth_type == ProviderAuthType.API_KEY and not credential_payload:
+        raise ValidationError(
+            {"credential_payload": "API key providers require a credential payload."}
+        )
+
+    account.status = IntegrationAccountStatus.CONNECTED
+    account.connected_by = connected_by
+    account.external_account_id = external_account_id or account.external_account_id
+    account.display_name = display_name or account.display_name or provider.name
+    account.scopes = scopes if scopes is not None else account.scopes
+    metadata = account.metadata if isinstance(account.metadata, dict) else {}
+    account.metadata = {
+        key: value for key, value in metadata.items() if key != "credential_deleted"
+    }
+    account.save(
+        update_fields=[
+            "status",
+            "connected_by",
+            "external_account_id",
+            "display_name",
+            "scopes",
+            "metadata",
+            "updated_at",
+        ]
+    )
+    if credential_payload:
+        _upsert_integration_credential(account, credential_type, credential_payload)
+    create_sync_log(
+        integration_account=account,
+        action="reconnect",
+        status=SyncLogStatus.SUCCEEDED,
+        metadata={"provider_slug": provider.slug},
+    )
     return account
 
 

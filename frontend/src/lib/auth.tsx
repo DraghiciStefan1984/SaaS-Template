@@ -12,6 +12,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isBootstrapping: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (credential: string) => Promise<void>;
   register: (payload: {
     email: string;
     password: string;
@@ -111,6 +112,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(accessToken && user),
       async login(email, password) {
         const response = await api.login(email, password);
+        const nextAccessToken = response.access ?? response.tokens?.access ?? "";
+        persistUser(response.user);
+        setAccessToken(nextAccessToken);
+        setUser(response.user);
+      },
+      async loginWithGoogle(credential) {
+        const response = await api.googleLogin(credential);
         const nextAccessToken = response.access ?? response.tokens?.access ?? "";
         persistUser(response.user);
         setAccessToken(nextAccessToken);

@@ -1,6 +1,7 @@
 from urllib.parse import urlparse
 
 from django.conf import settings
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .models import Plan, Subscription
@@ -23,6 +24,18 @@ def validate_billing_redirect_url(value):
 
 
 class PlanSerializer(serializers.ModelSerializer):
+    features = serializers.SerializerMethodField()
+
+    @extend_schema_field(serializers.DictField(child=serializers.BooleanField()))
+    def get_features(self, plan):
+        if not isinstance(plan.features, dict):
+            return {}
+        return {
+            name: enabled
+            for name, enabled in plan.features.items()
+            if isinstance(name, str) and isinstance(enabled, bool)
+        }
+
     class Meta:
         model = Plan
         fields = (
@@ -78,6 +91,18 @@ class SubscriptionSummarySerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = fields
+
+
+class EntitlementPlanSerializer(serializers.Serializer):
+    slug = serializers.SlugField()
+    name = serializers.CharField()
+    status = serializers.CharField()
+
+
+class OrganizationEntitlementsSerializer(serializers.Serializer):
+    organization = serializers.IntegerField()
+    plan = EntitlementPlanSerializer(allow_null=True)
+    features = serializers.DictField(child=serializers.BooleanField())
 
 
 class CheckoutSerializer(serializers.Serializer):

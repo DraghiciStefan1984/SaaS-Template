@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
@@ -9,6 +10,11 @@ from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import UserAccountStatus
+from apps.accounts.services import (
+    get_password_reset_user,
+    reset_user_password,
+    verify_email_verification_token,
+)
 from apps.organizations.services import create_organization_for_owner
 
 User = get_user_model()
@@ -105,11 +111,58 @@ class DetailResponseSerializer(serializers.Serializer):
     detail = serializers.CharField()
 
 
+class EmailVerificationSerializer(serializers.Serializer):
+    token = serializers.CharField(write_only=True, trim_whitespace=False, max_length=4096)
+
+    def save(self, **kwargs):
+        try:
+            return verify_email_verification_token(self.validated_data["token"])
+        except ValueError as exc:
+            raise serializers.ValidationError({"token": str(exc)}) from exc
+
+
+class GoogleCredentialSerializer(serializers.Serializer):
+    credential = serializers.CharField(write_only=True, trim_whitespace=False, max_length=16384)
+
+
+class GoogleLoginStatusSerializer(serializers.Serializer):
+    enabled = serializers.BooleanField()
+    client_id = serializers.CharField(allow_blank=True)
+    nonce = serializers.CharField(allow_blank=True)
+
+
+class SocialLoginResponseSerializer(serializers.Serializer):
+    access = serializers.CharField()
+    user = UserSerializer()
+
+
 class PasswordRecoveryRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
     def validate_email(self, value):
         return User.objects.normalize_email(value)
+
+
+class PasswordResetSerializer(serializers.Serializer):
+    uid = serializers.CharField(write_only=True)
+    token = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8, trim_whitespace=False)
+
+    def validate(self, attrs):
+        user = get_password_reset_user(attrs["uid"])
+        if user is None or not default_token_generator.check_token(user, attrs["token"]):
+            raise serializers.ValidationError({"token": "This password reset link is invalid."})
+        if not user.is_active or user.account_status != UserAccountStatus.ACTIVE:
+            raise serializers.ValidationError({"token": "This account is not active."})
+        validate_password(attrs["new_password"], user)
+        attrs["user"] = user
+        return attrs
+
+    def save(self, **kwargs):
+        return reset_user_password(
+            user=self.validated_data["user"],
+            new_password=self.validated_data["new_password"],
+        )
 
 
 class PasswordChangeSerializer(serializers.Serializer):

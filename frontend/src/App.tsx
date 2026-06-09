@@ -14,10 +14,12 @@ import { AccountPage } from "./pages/AccountPage";
 import { DangerZonePage } from "./pages/DangerZonePage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ExampleProductPage } from "./pages/ExampleProductPage";
+import { EmailVerificationPage } from "./pages/EmailVerificationPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { LandingPage } from "./pages/LandingPage";
 import { LegalPage } from "./pages/LegalPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import { PasswordResetPage } from "./pages/PasswordResetPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SecurityPage } from "./pages/SecurityPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -92,6 +94,8 @@ function AppRoutes() {
       <Route element={<AuthPage initialMode="login" />} path="/login" />
       <Route element={<AuthPage initialMode="register" />} path="/register" />
       <Route element={<AuthPage initialMode="recover" />} path="/recover-password" />
+      <Route element={<PasswordResetPage />} path="/reset-password" />
+      <Route element={<EmailVerificationPage />} path="/verify-email" />
       <Route element={<ProtectedWorkspace />} path="/dashboard">
         <Route element={<DashboardPage />} index />
         <Route element={<ExampleProductPage />} path="product" />

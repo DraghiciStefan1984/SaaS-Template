@@ -68,6 +68,9 @@ GitHub secrets/vars to add later:
 - `DEFAULT_AI_PROVIDER`
 - `EMAIL_PROVIDER`
 - `DEFAULT_FROM_EMAIL`
+- `EMAIL_VERIFICATION_MAX_AGE`
+- `GOOGLE_OAUTH_CLIENT_ID` when Google login is enabled
+- `GOOGLE_OAUTH_NONCE_COOKIE_NAME` / `GOOGLE_OAUTH_NONCE_MAX_AGE`
 - `AWS_STORAGE_BUCKET_NAME`
 
 ## Needed For AWS Deployment
@@ -219,6 +222,8 @@ Choose one provider before production email delivery:
 
 Current local default:
 - `EMAIL_PROVIDER=console`
+- Django's local console email backend prints password reset email content and
+  reset links to the backend console for local testing.
 
 Production/staging values:
 - `EMAIL_PROVIDER`
@@ -230,8 +235,10 @@ Optional provider-specific values:
 - `POSTMARK_SERVER_TOKEN`
 - `SENDGRID_API_KEY`
 
-These optional keys are not wired into code yet. Add them only when choosing the
-email provider implementation.
+These optional provider keys and production Django email backends are not wired
+into code yet. Add them only when choosing the email provider implementation.
+Password reset already uses the Django email backend, so configuring that backend
+is required before production password recovery can deliver real email.
 
 ## Needed For Observability
 
@@ -275,11 +282,14 @@ Needed:
 - Enabled APIs per product.
 
 Possible env values:
+- `GOOGLE_OAUTH_CLIENT_ID` for reusable Google sign-in
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `GOOGLE_REDIRECT_URI`
 
-Not wired into production code yet.
+Google sign-in is wired through `GOOGLE_OAUTH_CLIENT_ID`; Google Sheets/Drive
+provider integrations still require their own provider-specific OAuth client,
+redirect, scopes, token refresh, and exchange implementation.
 
 ### Slack
 
@@ -334,10 +344,13 @@ Optional CLI tools:
 
 Useful commands:
 ```bash
+npm run api:types
+npm run api:types:check
 npm run demo:prepare
 npm run release:check
 npm run deploy:check
 npm run deploy:check:full
+npm run deploy:check:google-login
 npm run product:scaffold:dry-run
 ```
 

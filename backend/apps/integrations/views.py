@@ -4,6 +4,7 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.audit.services import log_audit_event
 from apps.organizations.models import MembershipStatus, Organization
 from apps.organizations.permissions import (
     ADMIN_ROLES,
@@ -18,6 +19,7 @@ from .serializers import (
     IntegrationAccountSerializer,
     IntegrationProviderSerializer,
     IntegrationSyncLogSerializer,
+    ReconnectIntegrationSerializer,
 )
 from .services import disconnect_integration_account
 
@@ -83,6 +85,8 @@ class IntegrationAccountListView(OrganizationScopedMixin, generics.ListAPIView):
 
 
 class ConnectIntegrationView(OrganizationScopedMixin, APIView):
+    throttle_scope = "product_write"
+
     @extend_schema(
         request=ConnectIntegrationSerializer,
         responses={201: IntegrationAccountSerializer},
@@ -98,16 +102,64 @@ class ConnectIntegrationView(OrganizationScopedMixin, APIView):
             request=request,
             provider=provider,
         )
+        log_audit_event(
+            action="integrations.account.connected",
+            organization=organization,
+            request=request,
+            category="integrations",
+            target_entity_type="integration_account",
+            target_entity_id=account.id,
+            metadata={"provider_slug": provider.slug},
+        )
         return Response(IntegrationAccountSerializer(account).data, status=status.HTTP_201_CREATED)
 
 
 class DisconnectIntegrationView(OrganizationScopedMixin, APIView):
+    throttle_scope = "product_write"
+
     @extend_schema(request=None, responses=DisconnectIntegrationResponseSerializer)
     def post(self, request, account_id):
         account = self.get_user_integration_account(account_id)
         require_organization_role(request.user, account.organization, ADMIN_ROLES)
         disconnect_integration_account(account)
+        log_audit_event(
+            action="integrations.account.disconnected",
+            organization=account.organization,
+            request=request,
+            category="integrations",
+            target_entity_type="integration_account",
+            target_entity_id=account.id,
+            metadata={"provider_slug": account.provider.slug},
+        )
         return Response({"status": account.status})
+
+
+class ReconnectIntegrationView(OrganizationScopedMixin, APIView):
+    throttle_scope = "product_write"
+
+    @extend_schema(
+        request=ReconnectIntegrationSerializer,
+        responses=IntegrationAccountSerializer,
+    )
+    def post(self, request, account_id):
+        account = self.get_user_integration_account(account_id)
+        require_organization_role(request.user, account.organization, ADMIN_ROLES)
+        serializer = ReconnectIntegrationSerializer(
+            data=request.data,
+            context={"account": account, "request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        account = serializer.save()
+        log_audit_event(
+            action="integrations.account.reconnected",
+            organization=account.organization,
+            request=request,
+            category="integrations",
+            target_entity_type="integration_account",
+            target_entity_id=account.id,
+            metadata={"provider_slug": account.provider.slug},
+        )
+        return Response(IntegrationAccountSerializer(account).data)
 
 
 class IntegrationSyncLogListView(OrganizationScopedMixin, generics.ListAPIView):

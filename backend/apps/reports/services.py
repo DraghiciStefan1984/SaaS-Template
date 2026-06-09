@@ -1,10 +1,24 @@
+import json
+from pathlib import Path
+
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
-from rest_framework.exceptions import ValidationError
+from django.utils.text import slugify
+from rest_framework.exceptions import APIException, ValidationError
 
 from apps.jobs.services import create_job_run
 
 from .models import Report, ReportArtifact, ReportStatus, ReportTemplate
+
+
+class ReportArtifactDownloadUnavailable(APIException):
+    status_code = 503
+    default_detail = (
+        "This artifact storage backend is not configured for download yet. "
+        "Configure local storage or S3-compatible storage before enabling downloads."
+    )
+    default_code = "report_artifact_download_unavailable"
 
 
 def get_report_template(template_key):
@@ -134,3 +148,27 @@ def create_report_artifact(
         checksum=checksum,
         metadata=metadata or {},
     )
+
+
+def report_artifact_download(artifact):
+    filename_base = f"{slugify(artifact.report.title) or 'report'}-{artifact.id}"
+    if artifact.storage_backend == "database":
+        return {
+            "kind": "content",
+            "content": json.dumps(artifact.content, indent=2, sort_keys=True).encode(),
+            "content_type": "application/json",
+            "filename": f"{filename_base}.json",
+        }
+    if artifact.storage_backend == "local" and artifact.file_path:
+        media_root = Path(settings.MEDIA_ROOT).resolve()
+        file_path = (media_root / artifact.file_path).resolve()
+        if file_path.is_file() and file_path.is_relative_to(media_root):
+            return {
+                "kind": "file",
+                "path": file_path,
+                "content_type": "application/octet-stream",
+                "filename": f"{filename_base}.{artifact.format}",
+            }
+    # TODO(storage): Generate a short-lived S3 presigned download through an
+    # IAM role after AWS_STORAGE_BUCKET_NAME and the storage client are configured.
+    raise ReportArtifactDownloadUnavailable()

@@ -1,10 +1,25 @@
+from datetime import timedelta
+
 import pytest
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.ai.models import AIModelDecisionLog
-from apps.jobs.models import JobRun, JobRunStatus
-from apps.jobs.services import create_job_run, mark_job_failed, mark_job_started
+from apps.audit.models import AuditLog
+from apps.jobs.models import (
+    JobRun,
+    JobRunStatus,
+    ScheduledRun,
+    ScheduledWorkflowStatus,
+)
+from apps.jobs.services import (
+    create_job_run,
+    create_scheduled_workflow,
+    mark_job_failed,
+    mark_job_started,
+)
+from apps.jobs.tasks import dispatch_due_scheduled_workflows
 from apps.notifications.models import (
     NotificationChannel,
     NotificationDeliveryLog,
@@ -28,6 +43,13 @@ pytestmark = pytest.mark.django_db
 
 def make_user(django_user_model, email="user@example.com", password="SaaSCore!23456", **extra):
     return django_user_model.objects.create_user(email=email, password=password, **extra)
+
+
+def enable_scheduled_reports(organization, generated_reports=10):
+    plan = organization.subscription.plan
+    plan.features = {**plan.features, "scheduled_reports": True, "reports": True}
+    plan.limits = {**plan.limits, "generated_reports": generated_reports}
+    plan.save(update_fields=["features", "limits", "updated_at"])
 
 
 def test_default_report_templates_are_available(django_user_model):
@@ -281,6 +303,191 @@ def test_generate_report_task_creates_artifact_ai_decision_and_notification(djan
         event="report_ready",
         status=NotificationDeliveryStatus.SENT,
     ).exists()
+
+
+def test_admin_can_create_run_pause_and_resume_scheduled_report(django_user_model):
+    owner = make_user(django_user_model, email="schedule-owner@example.com")
+    organization = create_organization_for_owner(owner, "Scheduled Workspace")
+    enable_scheduled_reports(organization)
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    create_response = client.post(
+        "/api/v1/jobs/schedules/",
+        {
+            "organization_id": organization.id,
+            "name": "Weekly KPI schedule",
+            "frequency": "weekly",
+            "timezone": "Europe/Bucharest",
+            "title": "Weekly KPI report",
+            "template_key": "weekly_summary",
+            "requested_format": "json",
+            "input_payload": {"metrics": {"revenue": 1000}},
+        },
+        format="json",
+    )
+    workflow_id = create_response.json()["id"]
+    run_response = client.post(f"/api/v1/jobs/schedules/{workflow_id}/run/")
+    pause_response = client.post(f"/api/v1/jobs/schedules/{workflow_id}/pause/")
+    resume_response = client.post(f"/api/v1/jobs/schedules/{workflow_id}/resume/")
+
+    assert create_response.status_code == 201
+    assert run_response.status_code == 200
+    assert run_response.json()["trigger"] == "manual"
+    assert pause_response.json()["status"] == ScheduledWorkflowStatus.PAUSED
+    assert resume_response.json()["status"] == ScheduledWorkflowStatus.ACTIVE
+    assert ScheduledRun.objects.filter(workflow_id=workflow_id, trigger="manual").exists()
+    assert Report.objects.filter(
+        organization=organization,
+        related_entity_type="scheduled_workflow",
+        related_entity_id=str(workflow_id),
+    ).exists()
+    assert UsageRecord.objects.filter(
+        organization=organization,
+        source="jobs.run_scheduled_workflow",
+    ).exists()
+    assert AuditLog.objects.filter(action="jobs.scheduled_workflow.run").exists()
+
+
+def test_scheduled_dispatch_runs_due_workflow_once_and_advances_next_run(django_user_model):
+    owner = make_user(django_user_model, email="due-schedule@example.com")
+    organization = create_organization_for_owner(owner, "Due Schedule Workspace")
+    enable_scheduled_reports(organization)
+    due_at = timezone.now() - timedelta(minutes=5)
+    workflow = create_scheduled_workflow(
+        organization=organization,
+        created_by=owner,
+        name="Daily due report",
+        frequency="daily",
+        timezone_name="UTC",
+        next_run_at=due_at,
+        config={
+            "title": "Daily report",
+            "template_key": "weekly_summary",
+            "requested_format": "json",
+            "input_payload": {},
+        },
+    )
+
+    result = dispatch_due_scheduled_workflows()
+
+    workflow.refresh_from_db()
+    assert result["dispatched"] == 1
+    assert workflow.next_run_at > timezone.now()
+    assert ScheduledRun.objects.filter(workflow=workflow, trigger="scheduled").count() == 1
+
+
+def test_scheduled_dispatch_continues_after_one_workflow_fails(django_user_model, monkeypatch):
+    owner = make_user(django_user_model, email="dispatch-failure@example.com")
+    organization = create_organization_for_owner(owner, "Dispatch Failure Workspace")
+    enable_scheduled_reports(organization)
+    due_at = timezone.now() - timedelta(minutes=5)
+    workflows = [
+        create_scheduled_workflow(
+            organization=organization,
+            created_by=owner,
+            name=f"Due report {index}",
+            frequency="daily",
+            timezone_name="UTC",
+            next_run_at=due_at,
+            config={"title": "Daily report", "template_key": "weekly_summary"},
+        )
+        for index in range(2)
+    ]
+    calls = []
+
+    def run_or_fail(workflow, **_kwargs):
+        calls.append(workflow.id)
+        if workflow.id == workflows[0].id:
+            raise RuntimeError("Invalid schedule")
+        return object()
+
+    monkeypatch.setattr("apps.jobs.tasks.run_scheduled_workflow", run_or_fail)
+
+    result = dispatch_due_scheduled_workflows()
+
+    assert result == {"due": 2, "dispatched": 1, "failed": 1}
+    assert calls == [workflow.id for workflow in workflows]
+
+
+def test_free_plan_cannot_create_scheduled_workflow(django_user_model):
+    owner = make_user(django_user_model, email="free-schedule@example.com")
+    organization = create_organization_for_owner(owner, "Free Schedule Workspace")
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        "/api/v1/jobs/schedules/",
+        {
+            "organization_id": organization.id,
+            "name": "Weekly KPI schedule",
+            "frequency": "weekly",
+            "timezone": "UTC",
+            "title": "Weekly KPI report",
+            "template_key": "weekly_summary",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 403
+
+
+def test_member_cannot_manage_scheduled_workflows(django_user_model):
+    owner = make_user(django_user_model, email="schedule-owner@example.com")
+    member = make_user(django_user_model, email="schedule-member@example.com")
+    organization = create_organization_for_owner(owner, "Scheduled Workspace")
+    enable_scheduled_reports(organization)
+    Membership.objects.create(
+        organization=organization,
+        user=member,
+        role=MembershipRole.MEMBER,
+        status=MembershipStatus.ACTIVE,
+    )
+    client = APIClient()
+    client.force_authenticate(member)
+
+    response = client.get(f"/api/v1/jobs/schedules/?organization_id={organization.id}")
+
+    assert response.status_code == 403
+
+
+def test_admin_can_download_database_artifact_and_member_cannot(django_user_model):
+    owner = make_user(django_user_model, email="artifact-owner@example.com")
+    member = make_user(django_user_model, email="artifact-member@example.com")
+    organization = create_organization_for_owner(owner, "Artifact Workspace")
+    Membership.objects.create(
+        organization=organization,
+        user=member,
+        role=MembershipRole.MEMBER,
+        status=MembershipStatus.ACTIVE,
+    )
+    report = Report.objects.create(
+        organization=organization,
+        created_by=owner,
+        title="Downloadable report",
+        status=ReportStatus.SUCCEEDED,
+    )
+    artifact = ReportArtifact.objects.create(
+        report=report,
+        format="json",
+        content={"status": "ready"},
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    owner_response = client.get(
+        f"/api/v1/reports/{report.id}/artifacts/{artifact.id}/download/"
+    )
+    client.force_authenticate(member)
+    member_response = client.get(
+        f"/api/v1/reports/{report.id}/artifacts/{artifact.id}/download/"
+    )
+
+    assert owner_response.status_code == 200
+    assert owner_response["Content-Type"] == "application/json"
+    assert "attachment;" in owner_response["Content-Disposition"]
+    assert b'"status": "ready"' in owner_response.content
+    assert member_response.status_code == 403
 
 
 def test_generate_report_task_keeps_report_queued_during_retry(

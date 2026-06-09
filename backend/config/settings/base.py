@@ -166,6 +166,13 @@ AUTH_REFRESH_COOKIE_PATH = env("AUTH_REFRESH_COOKIE_PATH", default="/api/v1/auth
 AUTH_REFRESH_COOKIE_DOMAIN = env("AUTH_REFRESH_COOKIE_DOMAIN", default="")
 AUTH_REFRESH_COOKIE_SECURE = env.bool("AUTH_REFRESH_COOKIE_SECURE", default=not DEBUG)
 AUTH_REFRESH_COOKIE_SAMESITE = env("AUTH_REFRESH_COOKIE_SAMESITE", default="Lax")
+EMAIL_VERIFICATION_MAX_AGE = env.int("EMAIL_VERIFICATION_MAX_AGE", default=86400)
+GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", default="")
+GOOGLE_OAUTH_NONCE_COOKIE_NAME = env(
+    "GOOGLE_OAUTH_NONCE_COOKIE_NAME",
+    default="saas_core_google_oauth_nonce",
+)
+GOOGLE_OAUTH_NONCE_MAX_AGE = env.int("GOOGLE_OAUTH_NONCE_MAX_AGE", default=600)
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "SaaS Core Template API",
@@ -210,6 +217,12 @@ CELERY_RESULT_BACKEND = env(
     default="redis://localhost:6379/1",
 )
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {
+    "dispatch-due-scheduled-workflows": {
+        "task": "apps.jobs.tasks.dispatch_due_scheduled_workflows",
+        "schedule": 60.0,
+    },
+}
 
 HEALTHCHECK_REQUIRE_REDIS = env.bool("HEALTHCHECK_REQUIRE_REDIS", default=False)
 HEALTHCHECK_REDIS_URL = env("HEALTHCHECK_REDIS_URL", default=REDIS_URL)

@@ -1,10 +1,13 @@
+import logging
+import secrets
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -15,12 +18,27 @@ from .serializers import (
     AccountStatusTokenRefreshSerializer,
     DetailResponseSerializer,
     EmailTokenObtainPairSerializer,
+    EmailVerificationSerializer,
+    GoogleCredentialSerializer,
+    GoogleLoginStatusSerializer,
     LogoutSerializer,
     PasswordChangeSerializer,
     PasswordRecoveryRequestSerializer,
+    PasswordResetSerializer,
     RegisterSerializer,
+    SocialLoginResponseSerializer,
     UserSerializer,
 )
+from .services import (
+    blacklist_user_refresh_tokens,
+    get_or_create_google_user,
+    google_login_configuration,
+    send_email_verification_email,
+    send_password_reset_email,
+    verify_google_identity_token,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _refresh_cookie_name():
@@ -55,15 +73,30 @@ def _delete_refresh_cookie(response):
     )
 
 
+def _set_google_nonce_cookie(response, nonce):
+    response.set_cookie(
+        settings.GOOGLE_OAUTH_NONCE_COOKIE_NAME,
+        nonce,
+        max_age=settings.GOOGLE_OAUTH_NONCE_MAX_AGE,
+        path="/api/v1/auth/social/google/",
+        secure=settings.AUTH_REFRESH_COOKIE_SECURE,
+        httponly=True,
+        samesite=settings.AUTH_REFRESH_COOKIE_SAMESITE,
+    )
+
+
+def _delete_google_nonce_cookie(response):
+    response.delete_cookie(
+        settings.GOOGLE_OAUTH_NONCE_COOKIE_NAME,
+        path="/api/v1/auth/social/google/",
+        samesite=settings.AUTH_REFRESH_COOKIE_SAMESITE,
+    )
+
+
 def _mutable_request_data(request):
     if hasattr(request.data, "copy"):
         return request.data.copy()
     return dict(request.data)
-
-
-def _blacklist_user_refresh_tokens(user):
-    for outstanding_token in OutstandingToken.objects.filter(user=user):
-        BlacklistedToken.objects.get_or_create(token=outstanding_token)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -84,6 +117,17 @@ class RegisterView(generics.CreateAPIView):
             request=request,
             category="auth",
         )
+        try:
+            send_email_verification_email(user)
+            log_audit_event(
+                action="auth.email_verification_sent",
+                organization=user.primary_organization,
+                user=user,
+                request=request,
+                category="auth",
+            )
+        except Exception:
+            logger.exception("Registration succeeded but verification email could not be sent.")
         response = Response(
             {
                 "user": UserSerializer(user).data,
@@ -98,6 +142,92 @@ class RegisterView(generics.CreateAPIView):
             status=status.HTTP_201_CREATED,
         )
         _set_refresh_cookie(response, refresh)
+        return response
+
+
+class EmailVerificationView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]
+    serializer_class = EmailVerificationSerializer
+    throttle_scope = "auth"
+
+    @extend_schema(
+        request=EmailVerificationSerializer,
+        responses={status.HTTP_200_OK: DetailResponseSerializer},
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        log_audit_event(
+            action="auth.email_verified",
+            user=user,
+            request=request,
+            category="auth",
+        )
+        return Response({"detail": "Email address verified."})
+
+
+class EmailVerificationResendView(APIView):
+    throttle_scope = "auth"
+
+    @extend_schema(request=None, responses={status.HTTP_202_ACCEPTED: DetailResponseSerializer})
+    def post(self, request):
+        if not request.user.is_email_verified:
+            send_email_verification_email(request.user)
+            log_audit_event(
+                action="auth.email_verification_sent",
+                user=request.user,
+                request=request,
+                category="auth",
+            )
+        return Response(
+            {"detail": "If verification is still required, a new email has been sent."},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class GoogleLoginStatusView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(responses=GoogleLoginStatusSerializer)
+    def get(self, request):
+        nonce = secrets.token_urlsafe(32)
+        configuration = google_login_configuration(nonce)
+        response = Response(configuration)
+        if configuration["enabled"]:
+            _set_google_nonce_cookie(response, nonce)
+        return response
+
+
+class GoogleLoginView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]
+    serializer_class = GoogleCredentialSerializer
+    throttle_scope = "auth"
+
+    @extend_schema(
+        request=GoogleCredentialSerializer,
+        responses={status.HTTP_200_OK: SocialLoginResponseSerializer},
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        claims = verify_google_identity_token(
+            serializer.validated_data["credential"],
+            request.COOKIES.get(settings.GOOGLE_OAUTH_NONCE_COOKIE_NAME, ""),
+        )
+        user = get_or_create_google_user(claims)
+        refresh = RefreshToken.for_user(user)
+        log_audit_event(
+            action="auth.google_login",
+            user=user,
+            request=request,
+            category="auth",
+        )
+        response = Response(
+            {"access": str(refresh.access_token), "user": UserSerializer(user).data}
+        )
+        _set_refresh_cookie(response, refresh)
+        _delete_google_nonce_cookie(response)
         return response
 
 
@@ -180,7 +310,13 @@ class PasswordRecoveryRequestView(generics.GenericAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data["email"]
-        user = get_user_model().objects.filter(email__iexact=email).first()
+        user = get_user_model().objects.filter(
+            email__iexact=email,
+            is_active=True,
+            account_status="active",
+        ).first()
+        if user is not None:
+            send_password_reset_email(user)
         log_audit_event(
             action="auth.password_recovery_requested",
             user=user,
@@ -192,11 +328,35 @@ class PasswordRecoveryRequestView(generics.GenericAPIView):
             {
                 "detail": (
                     "If an account exists for this email, password recovery "
-                    "instructions will be sent when email delivery is configured."
+                    "instructions have been sent."
                 )
             },
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+class PasswordResetView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]
+    serializer_class = PasswordResetSerializer
+    throttle_scope = "auth"
+
+    @extend_schema(
+        request=PasswordResetSerializer,
+        responses={status.HTTP_200_OK: DetailResponseSerializer},
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        log_audit_event(
+            action="auth.password_reset_completed",
+            user=user,
+            request=request,
+            category="auth",
+        )
+        response = Response({"detail": "Password reset completed."})
+        _delete_refresh_cookie(response)
+        return response
 
 
 class PasswordChangeView(generics.GenericAPIView):
@@ -212,7 +372,7 @@ class PasswordChangeView(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
             user = serializer.save()
-            _blacklist_user_refresh_tokens(user)
+            blacklist_user_refresh_tokens(user)
         log_audit_event(
             action="auth.password_changed",
             user=request.user,

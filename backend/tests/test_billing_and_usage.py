@@ -71,6 +71,45 @@ def test_subscription_endpoint_returns_org_subscription(django_user_model):
     assert response.json()["plan"]["slug"] == "free"
 
 
+def test_entitlements_endpoint_returns_only_safe_boolean_plan_features(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    plan = organization.subscription.plan
+    plan.features = {
+        **plan.features,
+        "safe_enabled": True,
+        "safe_disabled": False,
+        "internal_configuration": {"provider": "private"},
+    }
+    plan.save(update_fields=["features", "updated_at"])
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.get(f"/api/v1/billing/entitlements/?organization_id={organization.id}")
+
+    assert response.status_code == 200
+    assert response.json()["organization"] == organization.id
+    assert response.json()["plan"]["slug"] == "free"
+    assert response.json()["features"]["safe_enabled"] is True
+    assert response.json()["features"]["safe_disabled"] is False
+    assert "internal_configuration" not in response.json()["features"]
+    public_plans = client.get("/api/v1/billing/plans/").json()
+    public_free_plan = next(item for item in public_plans if item["slug"] == "free")
+    assert "internal_configuration" not in public_free_plan["features"]
+
+
+def test_entitlements_endpoint_is_organization_scoped(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    other = make_user(django_user_model, email="other@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    client = APIClient()
+    client.force_authenticate(other)
+
+    response = client.get(f"/api/v1/billing/entitlements/?organization_id={organization.id}")
+
+    assert response.status_code == 404
+
+
 def test_subscription_endpoint_hides_stripe_identifiers_from_members(django_user_model):
     owner = make_user(django_user_model, email="owner@example.com")
     member = make_user(django_user_model, email="member@example.com")

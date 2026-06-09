@@ -19,6 +19,7 @@ stripe>=10.12,<16.0
 openai>=1.109,<3.0
 anthropic>=0.75,<1.0
 google-genai>=1.55,<2.0
+google-auth>=2.40,<3.0
 
 boto3>=1.41,<2.0
 django-storages[boto3]>=1.14,<2.0
@@ -32,4 +33,3 @@ whitenoise>=6.9,<7.0
 gunicorn>=23.0,<24.0
 sentry-sdk[django]>=2.47,<3.0
 reportlab>=4.4,<5.0
-

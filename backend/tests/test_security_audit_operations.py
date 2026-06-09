@@ -9,9 +9,12 @@ from apps.audit.models import AuditLog
 from apps.audit.services import get_request_ip_address
 from apps.billing.views import CheckoutView
 from apps.common.checks import production_security_settings_check
+from apps.integrations.views import ReconnectIntegrationView
+from apps.jobs.views import ScheduledWorkflowRunView
 from apps.organizations.models import Membership, MembershipRole, MembershipStatus
 from apps.organizations.services import create_organization_for_owner
 from apps.products.example_insights.views import ExampleInsightRequestListCreateView
+from apps.reports.views import ReportArtifactDownloadView
 
 pytestmark = pytest.mark.django_db
 
@@ -134,6 +137,9 @@ def test_security_throttle_scopes_are_configured():
     assert LoginView.throttle_scope == "auth"
     assert CheckoutView.throttle_scope == "billing_action"
     assert ExampleInsightRequestListCreateView.throttle_scope == "product_write"
+    assert ReconnectIntegrationView.throttle_scope == "product_write"
+    assert ScheduledWorkflowRunView.throttle_scope == "expensive_action"
+    assert ReportArtifactDownloadView.throttle_scope == "expensive_action"
 
 
 def test_production_security_check_flags_unsafe_secret():

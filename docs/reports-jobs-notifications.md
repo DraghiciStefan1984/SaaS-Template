@@ -20,6 +20,7 @@ Implemented endpoints:
 - `POST /api/v1/reports/`
 - `GET /api/v1/reports/{id}/`
 - `GET /api/v1/reports/{id}/artifacts/`
+- `GET /api/v1/reports/{id}/artifacts/{artifact_id}/download/`
 
 Current behavior:
 
@@ -29,17 +30,29 @@ Current behavior:
   it selects an AI execution plan, creates a JSON artifact, marks the report
   succeeded, and sends a console notification.
 - Product-specific report rendering should replace the placeholder artifact logic.
+- Owner/admin users can download database or safe local-file artifacts through an
+  audited, organization-scoped endpoint.
+- S3-compatible artifacts require a production storage adapter that returns a
+  short-lived presigned URL; this remains intentionally unconfigured.
 
 ## Jobs
 
-Core model:
+Core models:
 
 - `JobRun`: queued/running/succeeded/failed/retrying/cancelled workflow state with
   attempts, max attempts, errors, related entity metadata, and timestamps.
+- `ScheduledWorkflow`: organization-scoped safe workflow definition. The core
+  registry currently permits scheduled report generation only.
+- `ScheduledRun`: scheduled/manual execution history linked to its `JobRun`.
 
-Implemented endpoint:
+Implemented endpoints:
 
 - `GET /api/v1/jobs/?organization_id=...`
+- `GET/POST /api/v1/jobs/schedules/`
+- `GET /api/v1/jobs/schedules/{id}/runs/`
+- `POST /api/v1/jobs/schedules/{id}/run/`
+- `POST /api/v1/jobs/schedules/{id}/pause/`
+- `POST /api/v1/jobs/schedules/{id}/resume/`
 
 Reusable services:
 
@@ -47,6 +60,18 @@ Reusable services:
 - `mark_job_started(...)`
 - `mark_job_succeeded(...)`
 - `mark_job_failed(...)`
+- `create_scheduled_workflow(...)`
+- `run_scheduled_workflow(...)`
+- `set_scheduled_workflow_status(...)`
+
+Current scheduling behavior:
+
+- Schedule management is restricted to organization owners/admins.
+- Daily, weekly, and monthly schedules are supported.
+- Both the `scheduled_reports` and `reports` features and the report usage limit
+  are enforced server-side.
+- Celery Beat dispatches due schedules every minute. One failed schedule is
+  logged and does not stop the other due schedules.
 
 ## Notifications
 

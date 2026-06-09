@@ -21,11 +21,14 @@ Implemented endpoints:
 - `GET /api/v1/integrations/accounts/?organization_id=...`
 - `POST /api/v1/integrations/{provider_slug}/connect/`
 - `POST /api/v1/integrations/{account_id}/disconnect/`
+- `POST /api/v1/integrations/{account_id}/reconnect/`
 - `GET /api/v1/integrations/{account_id}/sync-logs/`
 
 Current behavior:
 
 - API-key providers can be connected using an encrypted credential payload.
+- Disconnected API-key and credential-free accounts can be explicitly
+  reconnected. Replacement credentials are encrypted and never returned.
 - OAuth providers return a descriptive `503` until OAuth client settings and a
   provider-specific OAuth client are implemented.
 - Credentials are never returned by API serializers.

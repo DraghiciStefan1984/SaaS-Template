@@ -41,10 +41,26 @@ export type Plan = {
   name: string;
   slug: string;
   description: string;
-  features: string[];
+  features: Record<string, unknown>;
   limits: Record<string, unknown>;
   is_public: boolean;
   display_order: number;
+};
+
+export type OrganizationEntitlements = {
+  organization: number;
+  plan: {
+    slug: string;
+    name: string;
+    status: string;
+  } | null;
+  features: Record<string, boolean>;
+};
+
+export type GoogleLoginStatus = {
+  enabled: boolean;
+  client_id: string;
+  nonce: string;
 };
 
 export type Subscription = {
@@ -173,6 +189,14 @@ export type Report = {
   job_run_id?: number;
 };
 
+export type ReportArtifact = {
+  id: number;
+  report: number;
+  format: string;
+  storage_backend: string;
+  created_at: string;
+};
+
 export type JobRun = {
   id: number;
   organization: number;
@@ -182,6 +206,31 @@ export type JobRun = {
   attempts: number;
   max_attempts: number;
   last_error: string;
+  created_at: string;
+};
+
+export type ScheduledWorkflow = {
+  id: number;
+  organization: number;
+  created_by: number | null;
+  name: string;
+  workflow_type: string;
+  status: string;
+  frequency: string;
+  timezone: string;
+  config: Record<string, unknown>;
+  next_run_at: string;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ScheduledRun = {
+  id: number;
+  workflow: number;
+  job_run: JobRun | null;
+  trigger: string;
+  scheduled_for: string | null;
   created_at: string;
 };
 

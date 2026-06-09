@@ -7,6 +7,7 @@ const checks = [
   ["node", ["scripts/backend-command.mjs", "manage.py", "check"]],
   ["node", ["scripts/backend-command.mjs", "manage.py", "makemigrations", "--check", "--dry-run"]],
   ["node", ["scripts/backend-command.mjs", "manage.py", "spectacular", "--validate", "--file", "openapi.yaml"]],
+  ["npm", ["run", "api:types:check"]],
   ["node", ["scripts/backend-command.mjs", "-m", "pytest"]],
   ["npm", ["--prefix", "frontend", "run", "lint"]],
   ["npm", ["--prefix", "frontend", "run", "typecheck"]],

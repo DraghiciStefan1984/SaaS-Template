@@ -30,6 +30,11 @@ export function BillingPage() {
     queryKey: ["usage", organizationId],
     queryFn: () => api.usageSummary(accessToken, organizationId!),
   });
+  const entitlementsQuery = useQuery({
+    enabled: Boolean(accessToken && organizationId),
+    queryKey: ["entitlements", organizationId],
+    queryFn: () => api.entitlements(accessToken, organizationId!),
+  });
   const checkoutMutation = useMutation({
     mutationFn: (planSlug: string) =>
       api.createCheckoutSession(accessToken, {
@@ -57,10 +62,16 @@ export function BillingPage() {
     <>
       <PageHeader eyebrow="Plan" icon={CreditCard} title="Plan and Usage" />
 
-      {plansQuery.isLoading || subscriptionQuery.isLoading || usageQuery.isLoading ? (
+      {plansQuery.isLoading ||
+      subscriptionQuery.isLoading ||
+      usageQuery.isLoading ||
+      entitlementsQuery.isLoading ? (
         <LoadingState title="Loading billing data" />
       ) : null}
-      {plansQuery.isError || subscriptionQuery.isError || usageQuery.isError ? (
+      {plansQuery.isError ||
+      subscriptionQuery.isError ||
+      usageQuery.isError ||
+      entitlementsQuery.isError ? (
         <ErrorState title="Billing data unavailable" />
       ) : null}
       {checkoutMutation.isError ? (
@@ -130,6 +141,25 @@ export function BillingPage() {
             <EmptyState title="No usage metrics" />
           )}
         </div>
+      </section>
+
+      <section className="tool-panel">
+        <div className="panel-heading">
+          <h2>Enabled Features</h2>
+          <StatusBadge value={entitlementsQuery.data?.plan?.slug ?? "none"} />
+        </div>
+        {Object.entries(entitlementsQuery.data?.features ?? {}).filter(([, enabled]) => enabled)
+          .length ? (
+          <div className="tag-list">
+            {Object.entries(entitlementsQuery.data?.features ?? {})
+              .filter(([, enabled]) => enabled)
+              .map(([feature]) => (
+                <span key={feature}>{feature.replaceAll("_", " ")}</span>
+              ))}
+          </div>
+        ) : (
+          <EmptyState title="No optional features enabled" />
+        )}
       </section>
 
       <section className="list-grid" aria-label="Available plans">

@@ -11,3 +11,4 @@
 9. Configure Stripe price IDs, feature flags, and usage limits.
 10. Add product-specific frontend pages using shared components.
 11. Run tests, security checks, and deployment checklist before launch.
+12. Regenerate frontend API route types with `npm run api:types` after contract changes.

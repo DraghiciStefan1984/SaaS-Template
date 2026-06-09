@@ -53,16 +53,21 @@ export function LandingPage() {
     queryFn: api.plans,
   });
   const plans = plansQuery.data?.length
-    ? plansQuery.data.map((plan) => ({
-        name: plan.name,
-        price: plan.slug === "free" ? "$0" : "TBD",
-        description: plan.description || "Reusable SaaS plan",
-        features: plan.features.length
-          ? plan.features
-          : Object.entries(plan.limits).map(
-              ([metric, limit]) => `${metric.replaceAll("_", " ")}: ${formatLimit(limit)}`,
-            ),
-      }))
+    ? plansQuery.data.map((plan) => {
+        const enabledFeatures = Object.entries(plan.features)
+          .filter(([, enabled]) => enabled === true)
+          .map(([feature]) => feature.replaceAll("_", " "));
+        return {
+          name: plan.name,
+          price: plan.slug === "free" ? "$0" : "TBD",
+          description: plan.description || "Reusable SaaS plan",
+          features: enabledFeatures.length
+            ? enabledFeatures
+            : Object.entries(plan.limits).map(
+                ([metric, limit]) => `${metric.replaceAll("_", " ")}: ${formatLimit(limit)}`,
+              ),
+        };
+      })
     : fallbackPlans;
 
   return (

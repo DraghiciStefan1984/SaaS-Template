@@ -1,18 +1,23 @@
-import { PlugZap } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { PlugZap, RefreshCw, Unplug } from "lucide-react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { PageHeader } from "../components/PageHeader";
-import { EmptyState, ErrorState, LoadingState } from "../components/StateBlock";
+import { EmptyState, ErrorState, LoadingState, SuccessState } from "../components/StateBlock";
 import { StatusBadge } from "../components/StatusBadge";
-import { api, listResults } from "../lib/api";
+import { api, getApiErrorMessage, listResults } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatDate } from "../lib/format";
-import { useWorkspace } from "../lib/workspace";
+import { isOrganizationAdmin, useWorkspace } from "../lib/workspace";
 
 export function IntegrationsPage() {
+  const queryClient = useQueryClient();
   const { accessToken } = useAuth();
   const { selectedOrganization } = useWorkspace();
   const organizationId = selectedOrganization?.id;
+  const canManage = isOrganizationAdmin(selectedOrganization);
+  const [reconnectAccountId, setReconnectAccountId] = useState<number | null>(null);
+  const [apiKey, setApiKey] = useState("");
 
   const providersQuery = useQuery({
     enabled: Boolean(accessToken),
@@ -26,6 +31,28 @@ export function IntegrationsPage() {
   });
 
   const accounts = listResults(accountsQuery.data);
+  const disconnectMutation = useMutation({
+    mutationFn: (accountId: number) => api.disconnectIntegration(accessToken, accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["integration-accounts", organizationId] });
+    },
+  });
+  const reconnectMutation = useMutation({
+    mutationFn: (accountId: number) => {
+      const account = accounts.find((candidate) => candidate.id === accountId);
+      const payload =
+        account?.provider.auth_type === "api_key"
+          ? { credential_type: "api_key", credential_payload: { api_key: apiKey } }
+          : {};
+      return api.reconnectIntegration(accessToken, accountId, payload);
+    },
+    onSuccess: () => {
+      setApiKey("");
+      setReconnectAccountId(null);
+      queryClient.invalidateQueries({ queryKey: ["integration-accounts", organizationId] });
+    },
+  });
+  const mutationError = disconnectMutation.error ?? reconnectMutation.error;
 
   return (
     <>
@@ -37,6 +64,11 @@ export function IntegrationsPage() {
       {providersQuery.isError || accountsQuery.isError ? (
         <ErrorState title="Integrations unavailable" />
       ) : null}
+      {mutationError ? (
+        <ErrorState detail={getApiErrorMessage(mutationError)} title="Integration action failed" />
+      ) : null}
+      {disconnectMutation.isSuccess ? <SuccessState title="Integration disconnected" /> : null}
+      {reconnectMutation.isSuccess ? <SuccessState title="Integration reconnected" /> : null}
 
       <section className="split-grid">
         <div className="tool-panel">
@@ -83,13 +115,92 @@ export function IntegrationsPage() {
                     <strong>{account.display_name || account.provider.name}</strong>
                     <span>{formatDate(account.last_sync_at ?? account.created_at)}</span>
                   </div>
-                  <StatusBadge value={account.status} />
+                  <div className="row-actions">
+                    <StatusBadge value={account.status} />
+                    {canManage && account.status === "connected" ? (
+                      <button
+                        aria-label={`Disconnect ${account.display_name || account.provider.name}`}
+                        className="icon-button"
+                        disabled={disconnectMutation.isPending}
+                        onClick={() => disconnectMutation.mutate(account.id)}
+                        title="Disconnect"
+                        type="button"
+                      >
+                        <Unplug aria-hidden="true" size={16} />
+                      </button>
+                    ) : null}
+                    {canManage &&
+                    account.status !== "connected" &&
+                    account.provider.auth_type !== "oauth2" ? (
+                      <button
+                        aria-label={`Reconnect ${account.display_name || account.provider.name}`}
+                        className="icon-button"
+                        disabled={reconnectMutation.isPending}
+                        onClick={() => {
+                          if (account.provider.auth_type === "api_key") {
+                            setReconnectAccountId(account.id);
+                          } else {
+                            reconnectMutation.mutate(account.id);
+                          }
+                        }}
+                        title="Reconnect"
+                        type="button"
+                      >
+                        <RefreshCw aria-hidden="true" size={16} />
+                      </button>
+                    ) : null}
+                    {canManage &&
+                    account.status !== "connected" &&
+                    account.provider.auth_type === "oauth2" ? (
+                      <span>OAuth setup required</span>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>
           ) : (
             <EmptyState title="No connected accounts" />
           )}
+          {reconnectAccountId ? (
+            <form
+              className="form-grid panel-action"
+              onSubmit={(event) => {
+                event.preventDefault();
+                reconnectMutation.mutate(reconnectAccountId);
+              }}
+            >
+              <label>
+                Replacement API key
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setApiKey(event.target.value)}
+                  required
+                  type="password"
+                  value={apiKey}
+                />
+              </label>
+              <div className="row-actions">
+                <button
+                  className="secondary-button"
+                  onClick={() => {
+                    setApiKey("");
+                    setReconnectAccountId(null);
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={reconnectMutation.isPending}
+                  type="submit"
+                >
+                  <RefreshCw aria-hidden="true" size={16} />
+                  Reconnect
+                </button>
+              </div>
+            </form>
+          ) : null}
         </div>
       </section>
     </>

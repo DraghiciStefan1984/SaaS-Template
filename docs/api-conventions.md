@@ -20,13 +20,30 @@ All APIs should use `/api/v1/` as the initial version prefix.
 
 ## Implemented Core Areas
 
-- Auth: registration, login, refresh, logout, current user profile, password
-  recovery request, password change
+- Auth: registration, login, refresh, logout, current user profile, email
+  verification/resend, optional Google identity login, password recovery request,
+  token-based password reset, password change
 - Organizations: organization CRUD, members list, invite placeholder
-- Billing: public plan list, organization subscription, checkout placeholder,
-  customer portal placeholder, Stripe webhook endpoint
+- Billing: public plan list, organization subscription, safe boolean entitlements,
+  checkout placeholder, customer portal placeholder, Stripe webhook endpoint
 - Usage: organization usage summary
-- Integrations: provider registry, connected accounts, disconnect action, sync logs
+- Integrations: provider registry, connected accounts, disconnect/reconnect
+  actions, sync logs
 - AI: provider registry, prompt template list, organization-scoped call logs
+- Jobs and reports: report requests, secure artifact download, job history,
+  scheduled report creation/actions/run history
 - Privacy: export requests, deletion requests, owner/requester-scoped deletion
   execution
+
+## Frontend Contract Types
+
+The frontend keeps a small typed API wrapper for request/response models and a
+generated route/method inventory derived from drf-spectacular OpenAPI:
+
+```bash
+npm run api:types
+npm run api:types:check
+```
+
+`api:types:check` is part of `release:check`; API changes must regenerate
+`frontend/src/lib/api-paths.generated.ts`.

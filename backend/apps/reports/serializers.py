@@ -93,7 +93,7 @@ class ReportCreateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=240)
     template_key = serializers.SlugField(required=False, allow_blank=True)
     requested_format = serializers.ChoiceField(
-        choices=ReportFormat.values,
+        choices=ReportFormat.choices,
         required=False,
         default=ReportFormat.JSON,
     )

@@ -1,7 +1,9 @@
 import pytest
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.audit.models import AuditLog
+from apps.jobs.models import ScheduledWorkflow
 from apps.organizations.models import Membership, MembershipRole, MembershipStatus
 from apps.organizations.services import create_organization_for_owner
 from apps.privacy.models import DataDeletionRequest, DataExportRequest, PrivacyRequestStatus
@@ -98,6 +100,33 @@ def test_data_export_payload_includes_product_module_records(django_user_model):
     assert product_record["constraints"] == {"private": "constraints"}
     assert product_record["ai_execution_plan"] == {"private": "plan"}
     assert product_record["error_message"] == "provider error"
+
+
+def test_data_export_payload_includes_scheduled_workflows(django_user_model):
+    owner = make_user(django_user_model, email="schedule-export@example.com")
+    organization = create_organization_for_owner(owner, "Schedule Export Workspace")
+    ScheduledWorkflow.objects.create(
+        organization=organization,
+        created_by=owner,
+        name="Private schedule",
+        frequency="weekly",
+        timezone="UTC",
+        config={"private": "schedule config"},
+        next_run_at=timezone.now(),
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        "/api/v1/privacy/exports/",
+        {"organization_id": organization.id, "scope": "organization"},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    workflow = response.json()["export_payload"]["scheduled_workflows"][0]
+    assert workflow["name"] == "Private schedule"
+    assert workflow["config"] == {"private": "schedule config"}
 
 
 def test_account_export_scope_returns_account_payload_for_member(django_user_model):

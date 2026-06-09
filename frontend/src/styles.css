@@ -387,6 +387,21 @@ h3 {
   margin-top: 14px;
 }
 
+.row-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.schedule-panel {
+  grid-column: span 2;
+}
+
+.schedule-list {
+  margin-top: 16px;
+}
+
 .compact-list,
 .usage-list,
 .detail-grid,
@@ -678,6 +693,21 @@ td {
   color: #1d4ed8;
   font-size: 13px;
   font-weight: 850;
+}
+
+.social-login-section {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.google-login-container,
+.google-login-placeholder {
+  width: min(320px, 100%);
+  min-height: 42px;
 }
 
 .segmented-control {
@@ -1223,6 +1253,10 @@ td {
   .settings-grid,
   .account-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .schedule-panel {
+    grid-column: span 1;
   }
 
   .organization-select {

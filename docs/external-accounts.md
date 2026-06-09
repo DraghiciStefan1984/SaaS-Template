@@ -74,6 +74,20 @@ Current code can store API-key credentials encrypted for a connected integration
 account. OAuth connect attempts return a descriptive `503` until OAuth client
 settings and provider-specific exchange logic exist.
 
+### Google Login
+
+Optional for products that want social sign-in.
+
+- Create a Google Cloud project and OAuth consent screen.
+- Create a Web application OAuth Client ID.
+- Add every frontend origin to Authorized JavaScript origins.
+- Set `GOOGLE_OAUTH_CLIENT_ID` in the backend environment.
+
+The browser receives a Google identity credential and sends it to the backend.
+The backend verifies signature, audience, issuer, expiry, and verified email
+plus the short-lived login nonce before creating or authenticating the user. No
+Google Client Secret is required for this ID-token flow.
+
 ### AWS
 
 Needed when staging or production deployment begins.

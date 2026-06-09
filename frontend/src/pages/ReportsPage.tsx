@@ -1,4 +1,4 @@
-import { FilePlus2, FileText } from "lucide-react";
+import { Download, FilePlus2, FileText } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -62,6 +62,24 @@ export function ReportsPage() {
       queryClient.invalidateQueries({ queryKey: ["jobs", organizationId] });
     },
   });
+  const downloadMutation = useMutation({
+    mutationFn: async (reportId: number) => {
+      const artifacts = listResults(await api.reportArtifacts(accessToken, reportId));
+      const artifact = artifacts[0];
+      if (!artifact) {
+        throw new Error("This report does not have a downloadable artifact yet.");
+      }
+      return api.downloadReportArtifact(accessToken, reportId, artifact.id);
+    },
+    onSuccess: ({ blob, filename }) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    },
+  });
 
   function handleCreateReport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -119,6 +137,12 @@ export function ReportsPage() {
           title="Report request created"
         />
       ) : null}
+      {downloadMutation.isError ? (
+        <ErrorState
+          detail={getApiErrorMessage(downloadMutation.error)}
+          title="Artifact download failed"
+        />
+      ) : null}
 
       <section className="split-grid">
         <div className="tool-panel">
@@ -134,6 +158,7 @@ export function ReportsPage() {
                     <th>Status</th>
                     <th>Format</th>
                     <th>Created</th>
+                    {canViewJobs ? <th>Actions</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -145,6 +170,20 @@ export function ReportsPage() {
                       </td>
                       <td>{report.requested_format}</td>
                       <td>{formatDate(report.created_at)}</td>
+                      {canViewJobs ? (
+                        <td>
+                          <button
+                            aria-label={`Download ${report.title}`}
+                            className="icon-button"
+                            disabled={downloadMutation.isPending || report.status !== "succeeded"}
+                            onClick={() => downloadMutation.mutate(report.id)}
+                            title="Download artifact"
+                            type="button"
+                          >
+                            <Download aria-hidden="true" size={16} />
+                          </button>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>

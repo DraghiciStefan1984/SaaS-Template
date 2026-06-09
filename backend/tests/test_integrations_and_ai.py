@@ -18,6 +18,7 @@ from apps.ai.services import (
     select_ai_execution_plan,
     validate_structured_output,
 )
+from apps.audit.models import AuditLog
 from apps.integrations.models import (
     CredentialType,
     IntegrationAccountStatus,
@@ -229,6 +230,75 @@ def test_disconnect_and_sync_logs_are_org_scoped(django_user_model):
     assert account.scopes == []
     assert account.metadata["credential_deleted"] is True
     assert not IntegrationCredential.objects.filter(integration_account=account).exists()
+
+
+def test_admin_can_reconnect_disconnected_api_key_account(django_user_model):
+    owner = make_user(django_user_model, email="reconnect-owner@example.com")
+    organization = create_organization_for_owner(owner, "Reconnect Workspace")
+    provider = make_api_key_provider()
+    account = organization.integration_accounts.create(
+        provider=provider,
+        display_name="Disconnected Account",
+        connected_by=owner,
+        status=IntegrationAccountStatus.DISCONNECTED,
+        metadata={"credential_deleted": True},
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        f"/api/v1/integrations/{account.id}/reconnect/",
+        {
+            "external_account_id": "external-reconnected",
+            "credential_type": CredentialType.API_KEY,
+            "credential_payload": {"api_key": "new-secret-api-key"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    account.refresh_from_db()
+    assert account.status == IntegrationAccountStatus.CONNECTED
+    assert account.external_account_id == "external-reconnected"
+    assert account.metadata.get("credential_deleted") is None
+    assert decrypt_credential_payload(account.credential.encrypted_payload) == {
+        "api_key": "new-secret-api-key"
+    }
+    assert account.sync_logs.filter(action="reconnect", status=SyncLogStatus.SUCCEEDED).exists()
+    assert AuditLog.objects.filter(
+        action="integrations.account.reconnected",
+        organization=organization,
+    ).exists()
+
+
+def test_reconnect_preserves_existing_account_identity_when_omitted(django_user_model):
+    owner = make_user(django_user_model, email="expired-reconnect@example.com")
+    organization = create_organization_for_owner(owner, "Expired Reconnect Workspace")
+    provider = make_api_key_provider()
+    account = organization.integration_accounts.create(
+        provider=provider,
+        external_account_id="external-existing",
+        display_name="Expired Account",
+        connected_by=owner,
+        status=IntegrationAccountStatus.EXPIRED,
+        scopes=["read:existing"],
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        f"/api/v1/integrations/{account.id}/reconnect/",
+        {
+            "credential_type": CredentialType.API_KEY,
+            "credential_payload": {"api_key": "replacement-key"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    account.refresh_from_db()
+    assert account.external_account_id == "external-existing"
+    assert account.scopes == ["read:existing"]
 
 
 def test_member_cannot_read_integration_sync_logs(django_user_model):

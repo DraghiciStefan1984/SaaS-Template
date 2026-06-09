@@ -22,6 +22,13 @@ Every new organization receives a Free subscription automatically when default
 plans are available. This gives every organization a plan context from day one,
 which lets product modules enforce usage limits even before paid billing is live.
 
+## Safe Entitlements
+
+`GET /api/v1/billing/entitlements/?organization_id=...` returns the effective
+plan and only boolean feature flags for an active organization member. Frontend
+feature gating may use this response for presentation, but every paid or limited
+action must still enforce the feature and usage rules in backend services.
+
 ## Usage Metrics
 
 The `usage` app tracks usage by:
@@ -69,3 +76,18 @@ actions return a descriptive `503` response.
 Webhook signature verification is implemented and tested with a local test
 secret. When a real Stripe account exists, configure per-environment webhook
 secrets and price IDs before enabling live billing.
+
+## Stripe Test-Mode Setup
+
+1. Create a Stripe account and keep the dashboard in test mode.
+2. Create recurring Prices for Starter, Pro, and Agency; keep Free internal.
+3. Set the test secret key and Price IDs in the environment/secret store.
+4. Install Stripe CLI and forward events locally:
+
+   ```bash
+   stripe listen --forward-to localhost:8000/api/v1/billing/webhooks/stripe/
+   ```
+
+5. Put the CLI webhook signing secret in `STRIPE_WEBHOOK_SECRET`.
+6. Test Checkout, Customer Portal, duplicate webhook delivery, cancellation,
+   past-due state, and Free fallback before adding live keys.

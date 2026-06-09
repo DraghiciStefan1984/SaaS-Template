@@ -5,18 +5,21 @@ import { useMutation } from "@tanstack/react-query";
 import { PageHeader } from "../components/PageHeader";
 import { ErrorState, SuccessState } from "../components/StateBlock";
 import { StatusBadge } from "../components/StatusBadge";
-import { getApiErrorMessage } from "../lib/api";
+import { api, getApiErrorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatDate } from "../lib/format";
 import { useWorkspace } from "../lib/workspace";
 
 export function AccountPage() {
-  const { user, updateProfile } = useAuth();
+  const { accessToken, user, updateProfile } = useAuth();
   const { selectedOrganization } = useWorkspace();
   const [name, setName] = useState(user?.name ?? "");
 
   const updateProfileMutation = useMutation({
     mutationFn: () => updateProfile({ name }),
+  });
+  const resendVerificationMutation = useMutation({
+    mutationFn: () => api.resendEmailVerification(accessToken),
   });
 
   function handleProfileSave(event: FormEvent<HTMLFormElement>) {
@@ -60,6 +63,26 @@ export function AccountPage() {
               <dd>{selectedOrganization?.my_role ?? "n/a"}</dd>
             </div>
           </dl>
+          {!user?.is_email_verified ? (
+            <button
+              className="secondary-button panel-action"
+              disabled={resendVerificationMutation.isPending}
+              onClick={() => resendVerificationMutation.mutate()}
+              type="button"
+            >
+              <Mail aria-hidden="true" size={18} />
+              {resendVerificationMutation.isPending ? "Sending" : "Resend verification email"}
+            </button>
+          ) : null}
+          {resendVerificationMutation.isError ? (
+            <ErrorState
+              detail={getApiErrorMessage(resendVerificationMutation.error)}
+              title="Verification email unavailable"
+            />
+          ) : null}
+          {resendVerificationMutation.data ? (
+            <SuccessState title={resendVerificationMutation.data.detail} />
+          ) : null}
         </div>
 
         <div className="tool-panel">

@@ -103,6 +103,21 @@ class Command(BaseCommand):
         self._require(subscription.get("plan"), "Demo subscription has no plan.")
         checks.append("subscription")
 
+        entitlements = self._get(
+            client,
+            f"/api/v1/billing/entitlements/?organization_id={organization_id}",
+            "entitlements",
+        )
+        self._require(
+            entitlements.get("organization") == organization_id,
+            "Entitlements do not belong to the demo organization.",
+        )
+        self._require(
+            isinstance(entitlements.get("features"), dict),
+            "Entitlements response is missing safe feature flags.",
+        )
+        checks.append("plan entitlements")
+
         usage = self._get(
             client,
             f"/api/v1/usage/summary/?organization_id={organization_id}",

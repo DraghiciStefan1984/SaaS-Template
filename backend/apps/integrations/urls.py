@@ -6,6 +6,7 @@ from .views import (
     IntegrationAccountListView,
     IntegrationProviderListView,
     IntegrationSyncLogListView,
+    ReconnectIntegrationView,
 )
 
 urlpatterns = [
@@ -20,6 +21,11 @@ urlpatterns = [
         "<int:account_id>/disconnect/",
         DisconnectIntegrationView.as_view(),
         name="integration-disconnect",
+    ),
+    path(
+        "<int:account_id>/reconnect/",
+        ReconnectIntegrationView.as_view(),
+        name="integration-reconnect",
     ),
     path(
         "<int:account_id>/sync-logs/",

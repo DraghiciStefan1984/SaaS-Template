@@ -17,12 +17,15 @@ Current scaffold:
 - documentation placeholders
 - CI workflow skeleton
 - custom user model, JWT auth, organizations, memberships, and role permissions
+- email verification and optional Google sign-in behind backend auth services
 - billing skeleton with seeded plans, subscriptions, Stripe placeholders, and webhook verification
+- organization-scoped plan entitlements with safe boolean feature flags
 - usage tracking foundation with plan-limit enforcement services
 - integrations skeleton with provider registry, encrypted credentials, connected accounts, and sync logs
 - AI skeleton with provider registry, task profiles, model policies, execution planning,
   prompt templates, structured output validation, and call tracking
-- reports/jobs/notifications skeleton for queued report workflows and delivery logs
+- reports/jobs/notifications foundation for queued and scheduled report workflows,
+  secure artifact downloads, and delivery logs
 
 See [CHANGELOG.txt](CHANGELOG.txt) for the phase-by-phase implementation history.
 
@@ -77,6 +80,18 @@ Docker Desktop is recommended for local development.
 
 The first implementation phases will expand the backend apps and frontend shell.
 
+For browser-based cloud IDEs such as Replit, use the same environment examples,
+run PostgreSQL and Redis as external services, expose backend/frontend ports, and
+keep secrets in the platform secret store. Replit is an optional development
+environment, not a production dependency or replacement for the AWS target.
+
+Generate and verify frontend API route types from the backend OpenAPI contract:
+
+```bash
+npm run api:types
+npm run api:types:check
+```
+
 ## Development Rules
 
 - Keep the backend API-first.
@@ -95,7 +110,12 @@ The first implementation phases will expand the backend apps and frontend shell.
 - `POST /api/v1/auth/refresh/`
 - `POST /api/v1/auth/logout/`
 - `GET/PATCH /api/v1/auth/me/`
+- `POST /api/v1/auth/email/verify/`
+- `POST /api/v1/auth/email/verification/resend/`
+- `GET /api/v1/auth/social/google/status/`
+- `POST /api/v1/auth/social/google/`
 - `POST /api/v1/auth/password/recover/`
+- `POST /api/v1/auth/password/reset/`
 - `POST /api/v1/auth/password/change/`
 - `GET/POST /api/v1/organizations/`
 - `GET/PATCH/DELETE /api/v1/organizations/{id}/`
@@ -103,6 +123,7 @@ The first implementation phases will expand the backend apps and frontend shell.
 - `POST /api/v1/organizations/{id}/invite-member/`
 - `GET /api/v1/billing/plans/`
 - `GET /api/v1/billing/subscription/?organization_id=...`
+- `GET /api/v1/billing/entitlements/?organization_id=...`
 - `POST /api/v1/billing/checkout/`
 - `POST /api/v1/billing/customer-portal/`
 - `POST /api/v1/billing/webhooks/stripe/`
@@ -111,6 +132,7 @@ The first implementation phases will expand the backend apps and frontend shell.
 - `GET /api/v1/integrations/accounts/?organization_id=...`
 - `POST /api/v1/integrations/{provider_slug}/connect/`
 - `POST /api/v1/integrations/{account_id}/disconnect/`
+- `POST /api/v1/integrations/{account_id}/reconnect/`
 - `GET /api/v1/integrations/{account_id}/sync-logs/`
 - `GET /api/v1/ai/providers/`
 - `GET /api/v1/ai/prompt-templates/`
@@ -120,10 +142,16 @@ The first implementation phases will expand the backend apps and frontend shell.
 - `GET /api/v1/ai/decision-logs/?organization_id=...`
 - `GET /api/v1/ai/call-logs/?organization_id=...`
 - `GET /api/v1/jobs/?organization_id=...`
+- `GET/POST /api/v1/jobs/schedules/`
+- `GET /api/v1/jobs/schedules/{id}/runs/`
+- `POST /api/v1/jobs/schedules/{id}/run/`
+- `POST /api/v1/jobs/schedules/{id}/pause/`
+- `POST /api/v1/jobs/schedules/{id}/resume/`
 - `GET /api/v1/reports/templates/`
 - `GET/POST /api/v1/reports/`
 - `GET /api/v1/reports/{id}/`
 - `GET /api/v1/reports/{id}/artifacts/`
+- `GET /api/v1/reports/{id}/artifacts/{artifact_id}/download/`
 - `GET/POST /api/v1/notifications/preferences/`
 - `GET /api/v1/notifications/delivery-logs/?organization_id=...`
 - `GET/POST /api/v1/privacy/exports/`

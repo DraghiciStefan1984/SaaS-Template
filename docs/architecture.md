@@ -28,9 +28,11 @@ Future products should add:
 
 ## Current Core Modules
 
-- `accounts`: custom user model and JWT auth
+- `accounts`: custom user model, JWT auth, email verification, and optional
+  Google identity-token login
 - `organizations`: workspaces, memberships, and role checks
-- `billing`: plans, subscriptions, Stripe checkout/customer portal/webhook skeleton
+- `billing`: plans, subscriptions, Stripe checkout/customer portal/webhook
+  skeleton, and safe organization entitlement projection
 - `usage`: usage records and plan-limit enforcement
 - `integrations`: provider registry, connected accounts, encrypted credentials, sync logs
 - `ai`: provider registry, task profiles, model policies, execution decisions, prompts,

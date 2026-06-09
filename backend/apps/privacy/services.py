@@ -15,7 +15,7 @@ from apps.integrations.models import (
     IntegrationCredential,
     IntegrationSyncLog,
 )
-from apps.jobs.models import JobRun
+from apps.jobs.models import JobRun, ScheduledRun, ScheduledWorkflow
 from apps.notifications.models import NotificationDeliveryLog, NotificationPreference
 from apps.products.example_insights.models import ExampleInsightRequest
 from apps.reports.models import Report, ReportArtifact
@@ -194,6 +194,35 @@ def build_organization_export_payload(organization):
                 "updated_at": _iso(job.updated_at),
             }
             for job in JobRun.objects.filter(organization=organization)
+            .select_related("created_by")
+            .order_by("id")
+        ],
+        "scheduled_workflows": [
+            {
+                "id": workflow.id,
+                "created_by": _user_payload(workflow.created_by),
+                "name": workflow.name,
+                "workflow_type": workflow.workflow_type,
+                "status": workflow.status,
+                "frequency": workflow.frequency,
+                "timezone": workflow.timezone,
+                "config": workflow.config,
+                "next_run_at": _iso(workflow.next_run_at),
+                "last_run_at": _iso(workflow.last_run_at),
+                "created_at": _iso(workflow.created_at),
+                "updated_at": _iso(workflow.updated_at),
+                "runs": [
+                    {
+                        "id": run.id,
+                        "job_run_id": run.job_run_id,
+                        "trigger": run.trigger,
+                        "scheduled_for": _iso(run.scheduled_for),
+                        "created_at": _iso(run.created_at),
+                    }
+                    for run in ScheduledRun.objects.filter(workflow=workflow).order_by("id")
+                ],
+            }
+            for workflow in ScheduledWorkflow.objects.filter(organization=organization)
             .select_related("created_by")
             .order_by("id")
         ],
@@ -412,6 +441,23 @@ def build_account_export_payload(*, organization, user):
             }
             for request in ExampleInsightRequest.objects.filter(created_by=user).order_by("id")
         ],
+        "created_scheduled_workflows": [
+            {
+                "id": workflow.id,
+                "organization_id": workflow.organization_id,
+                "name": workflow.name,
+                "workflow_type": workflow.workflow_type,
+                "status": workflow.status,
+                "frequency": workflow.frequency,
+                "timezone": workflow.timezone,
+                "config": workflow.config,
+                "next_run_at": _iso(workflow.next_run_at),
+                "last_run_at": _iso(workflow.last_run_at),
+                "created_at": _iso(workflow.created_at),
+                "updated_at": _iso(workflow.updated_at),
+            }
+            for workflow in ScheduledWorkflow.objects.filter(created_by=user).order_by("id")
+        ],
     }
 
 
@@ -533,6 +579,12 @@ def _anonymize_organization(organization):
         last_error="",
         metadata={},
     )
+    ScheduledWorkflow.objects.filter(organization=organization).update(
+        name="Deleted scheduled workflow",
+        status="paused",
+        timezone="UTC",
+        config={},
+    )
     NotificationPreference.objects.filter(organization=organization).update(config={})
     NotificationDeliveryLog.objects.filter(organization=organization).update(
         recipient="",
@@ -587,6 +639,7 @@ def _anonymize_account(deletion_request):
     user = deletion_request.requested_by
     if user is None:
         return
+    ScheduledWorkflow.objects.filter(created_by=user).update(created_by=None)
     user.organization_memberships.update(
         invited_email="",
         status="disabled",

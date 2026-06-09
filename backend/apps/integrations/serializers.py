@@ -9,7 +9,11 @@ from .models import (
     IntegrationSyncLog,
     ProviderAuthType,
 )
-from .services import connect_integration_account, provider_health_check
+from .services import (
+    connect_integration_account,
+    provider_health_check,
+    reconnect_integration_account,
+)
 
 
 class IntegrationProviderSerializer(serializers.ModelSerializer):
@@ -125,6 +129,33 @@ class IntegrationSyncLogSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = fields
+
+
+class ReconnectIntegrationSerializer(serializers.Serializer):
+    external_account_id = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    display_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    scopes = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True,
+    )
+    credential_type = serializers.ChoiceField(
+        choices=CredentialType.choices,
+        required=False,
+        default=CredentialType.API_KEY,
+    )
+    credential_payload = serializers.JSONField(
+        required=False,
+        write_only=True,
+        validators=[validate_json_object],
+    )
+
+    def create(self, validated_data):
+        return reconnect_integration_account(
+            self.context["account"],
+            connected_by=self.context["request"].user,
+            **validated_data,
+        )
 
 
 class DisconnectIntegrationResponseSerializer(serializers.Serializer):

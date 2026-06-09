@@ -9,13 +9,18 @@ import type {
   IntegrationAccount,
   IntegrationProvider,
   JobRun,
+  GoogleLoginStatus,
   NotificationDeliveryLog,
   NotificationPreference,
   Organization,
+  OrganizationEntitlements,
   Paginated,
   Plan,
   Report,
+  ReportArtifact,
   ReportTemplate,
+  ScheduledRun,
+  ScheduledWorkflow,
   Subscription,
   UsageSummary,
   User,
@@ -139,6 +144,50 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   return payload as T;
 }
 
+async function downloadApiFile(
+  path: string,
+  token: string,
+  skipAuthRefresh = false,
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(`${API_BASE_URL}${API_PREFIX}${path}`, {
+    credentials: "include",
+    headers: {
+      Accept: "application/octet-stream",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (response.status === 401 && !skipAuthRefresh) {
+    try {
+      const refreshResponse = await api.refresh();
+      authTokenHandlers.setAccessToken?.(refreshResponse.access);
+      return downloadApiFile(path, refreshResponse.access, true);
+    } catch {
+      authTokenHandlers.clearAuth?.();
+    }
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    let payload: unknown = text;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      // Keep non-JSON provider/proxy errors as plain text.
+    }
+    const fieldMessages = flattenPayloadMessages(payload);
+    throw new ApiError(
+      fieldMessages[0] ?? `Request failed with status ${response.status}`,
+      response.status,
+      payload,
+    );
+  }
+
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? "report-artifact";
+  return { blob: await response.blob(), filename };
+}
+
 export function listResults<T>(payload: Paginated<T> | T[] | undefined): T[] {
   if (!payload) {
     return [];
@@ -185,6 +234,11 @@ export const api = {
       method: "POST",
       body: { email },
     }),
+  resetPassword: (payload: { uid: string; token: string; new_password: string }) =>
+    apiRequest<{ detail: string }>("/auth/password/reset/", {
+      method: "POST",
+      body: payload,
+    }),
   changePassword: (
     token: string,
     payload: {
@@ -196,6 +250,23 @@ export const api = {
       method: "POST",
       token,
       body: payload,
+    }),
+  verifyEmail: (token: string) =>
+    apiRequest<{ detail: string }>("/auth/email/verify/", {
+      method: "POST",
+      body: { token },
+    }),
+  resendEmailVerification: (token: string) =>
+    apiRequest<{ detail: string }>("/auth/email/verification/resend/", {
+      method: "POST",
+      token,
+      body: {},
+    }),
+  googleLoginStatus: () => apiRequest<GoogleLoginStatus>("/auth/social/google/status/"),
+  googleLogin: (credential: string) =>
+    apiRequest<AuthResponse>("/auth/social/google/", {
+      method: "POST",
+      body: { credential },
     }),
   organizations: (token: string) =>
     apiRequest<Paginated<Organization> | Organization[]>("/organizations/", { token }),
@@ -216,6 +287,11 @@ export const api = {
   plans: () => apiRequest<Plan[]>("/billing/plans/"),
   subscription: (token: string, organizationId: number) =>
     apiRequest<Subscription>(`/billing/subscription/?organization_id=${organizationId}`, { token }),
+  entitlements: (token: string, organizationId: number) =>
+    apiRequest<OrganizationEntitlements>(
+      `/billing/entitlements/?organization_id=${organizationId}`,
+      { token },
+    ),
   createCheckoutSession: (
     token: string,
     payload: {
@@ -251,6 +327,25 @@ export const api = {
       `/integrations/accounts/?organization_id=${organizationId}`,
       { token },
     ),
+  disconnectIntegration: (token: string, accountId: number) =>
+    apiRequest<{ status: string }>(`/integrations/${accountId}/disconnect/`, {
+      method: "POST",
+      token,
+      body: {},
+    }),
+  reconnectIntegration: (
+    token: string,
+    accountId: number,
+    payload: {
+      credential_type?: string;
+      credential_payload?: Record<string, unknown>;
+    },
+  ) =>
+    apiRequest<IntegrationAccount>(`/integrations/${accountId}/reconnect/`, {
+      method: "POST",
+      token,
+      body: payload,
+    }),
   aiProviders: (token: string) => apiRequest<AIProvider[]>("/ai/providers/", { token }),
   aiTaskProfiles: (token: string) =>
     apiRequest<Paginated<AITaskProfile>>("/ai/task-profiles/", { token }),
@@ -278,6 +373,12 @@ export const api = {
     apiRequest<ReportTemplate[]>("/reports/templates/", { token }),
   reports: (token: string, organizationId: number) =>
     apiRequest<Paginated<Report>>(`/reports/?organization_id=${organizationId}`, { token }),
+  reportArtifacts: (token: string, reportId: number) =>
+    apiRequest<Paginated<ReportArtifact> | ReportArtifact[]>(`/reports/${reportId}/artifacts/`, {
+      token,
+    }),
+  downloadReportArtifact: (token: string, reportId: number, artifactId: number) =>
+    downloadApiFile(`/reports/${reportId}/artifacts/${artifactId}/download/`, token),
   createReport: (
     token: string,
     payload: {
@@ -295,6 +396,49 @@ export const api = {
     }),
   jobs: (token: string, organizationId: number) =>
     apiRequest<Paginated<JobRun>>(`/jobs/?organization_id=${organizationId}`, { token }),
+  scheduledWorkflows: (token: string, organizationId: number) =>
+    apiRequest<Paginated<ScheduledWorkflow>>(
+      `/jobs/schedules/?organization_id=${organizationId}`,
+      { token },
+    ),
+  createScheduledWorkflow: (
+    token: string,
+    payload: {
+      organization_id: number;
+      name: string;
+      frequency: string;
+      timezone: string;
+      title: string;
+      template_key: string;
+      requested_format: string;
+      input_payload: Record<string, unknown>;
+    },
+  ) =>
+    apiRequest<ScheduledWorkflow>("/jobs/schedules/", {
+      method: "POST",
+      token,
+      body: payload,
+    }),
+  scheduledWorkflowRuns: (token: string, workflowId: number) =>
+    apiRequest<Paginated<ScheduledRun>>(`/jobs/schedules/${workflowId}/runs/`, { token }),
+  runScheduledWorkflow: (token: string, workflowId: number) =>
+    apiRequest<ScheduledRun>(`/jobs/schedules/${workflowId}/run/`, {
+      method: "POST",
+      token,
+      body: {},
+    }),
+  pauseScheduledWorkflow: (token: string, workflowId: number) =>
+    apiRequest<ScheduledWorkflow>(`/jobs/schedules/${workflowId}/pause/`, {
+      method: "POST",
+      token,
+      body: {},
+    }),
+  resumeScheduledWorkflow: (token: string, workflowId: number) =>
+    apiRequest<ScheduledWorkflow>(`/jobs/schedules/${workflowId}/resume/`, {
+      method: "POST",
+      token,
+      body: {},
+    }),
   notificationPreferences: (token: string, organizationId: number) =>
     apiRequest<Paginated<NotificationPreference>>(
       `/notifications/preferences/?organization_id=${organizationId}`,

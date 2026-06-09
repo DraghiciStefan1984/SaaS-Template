@@ -1,5 +1,9 @@
+from urllib.parse import parse_qs, urlparse
+
 import pytest
 from django.conf import settings
+from django.core import mail
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from apps.accounts.models import UserAccountStatus
@@ -43,6 +47,144 @@ def test_register_creates_user_default_organization_owner_membership(django_user
     user = django_user_model.objects.get(email="founder@example.com")
     organization = Organization.objects.get(name="Founder Labs")
     assert Membership.objects.get(user=user, organization=organization).role == MembershipRole.OWNER
+    assert len(mail.outbox) == 1
+    assert "/verify-email?token=" in mail.outbox[0].body
+
+
+def test_email_verification_link_marks_registered_user_verified(django_user_model):
+    client = APIClient()
+    register_response = client.post(
+        "/api/v1/auth/register/",
+        {
+            "email": "verify@example.com",
+            "password": "SaaSCore!23456",
+            "organization_name": "Verify Workspace",
+        },
+        format="json",
+    )
+    verification_url = mail.outbox[0].body.splitlines()[-1]
+    token = parse_qs(urlparse(verification_url).query)["token"][0]
+
+    response = client.post("/api/v1/auth/email/verify/", {"token": token}, format="json")
+
+    assert register_response.status_code == 201
+    assert response.status_code == 200
+    user = django_user_model.objects.get(email="verify@example.com")
+    assert user.is_email_verified is True
+    assert AuditLog.objects.filter(action="auth.email_verified", user=user).exists()
+
+
+def test_email_verification_rejects_invalid_token():
+    client = APIClient()
+
+    response = client.post(
+        "/api/v1/auth/email/verify/",
+        {"token": "invalid"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+
+
+def test_authenticated_user_can_resend_email_verification(django_user_model):
+    user = make_user(django_user_model, email="resend-verification@example.com")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post("/api/v1/auth/email/verification/resend/", {}, format="json")
+
+    assert response.status_code == 202
+    assert len(mail.outbox) == 1
+    assert "/verify-email?token=" in mail.outbox[0].body
+
+
+def test_verified_user_resend_does_not_send_duplicate_email(django_user_model):
+    user = make_user(
+        django_user_model,
+        email="already-verified@example.com",
+        is_email_verified=True,
+    )
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post("/api/v1/auth/email/verification/resend/", {}, format="json")
+
+    assert response.status_code == 202
+    assert len(mail.outbox) == 0
+
+
+def test_google_login_status_is_disabled_without_client_id():
+    client = APIClient()
+
+    response = client.get("/api/v1/auth/social/google/status/")
+
+    assert response.status_code == 200
+    assert response.json() == {"enabled": False, "client_id": "", "nonce": ""}
+
+
+@override_settings(GOOGLE_OAUTH_CLIENT_ID="test-google-client-id")
+def test_google_login_status_sets_short_lived_httponly_nonce_cookie():
+    client = APIClient()
+
+    response = client.get("/api/v1/auth/social/google/status/")
+
+    assert response.status_code == 200
+    assert response.json()["enabled"] is True
+    assert response.json()["client_id"] == "test-google-client-id"
+    assert response.json()["nonce"]
+    nonce_cookie = response.cookies[settings.GOOGLE_OAUTH_NONCE_COOKIE_NAME]
+    assert nonce_cookie.value == response.json()["nonce"]
+    assert nonce_cookie["httponly"]
+
+
+@override_settings(GOOGLE_OAUTH_CLIENT_ID="test-google-client-id")
+def test_google_login_uses_verified_provider_identity_and_creates_workspace(
+    django_user_model,
+    monkeypatch,
+):
+    def verify_identity(credential, expected_nonce):
+        assert credential == "provider-issued-id-token"
+        assert expected_nonce == "test-login-nonce"
+        return {
+            "email": "google-user@example.com",
+            "email_verified": True,
+            "name": "Google User",
+        }
+
+    monkeypatch.setattr(
+        "apps.accounts.views.verify_google_identity_token",
+        verify_identity,
+    )
+    client = APIClient()
+    client.cookies[settings.GOOGLE_OAUTH_NONCE_COOKIE_NAME] = "test-login-nonce"
+
+    response = client.post(
+        "/api/v1/auth/social/google/",
+        {"credential": "provider-issued-id-token"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["access"]
+    assert response.json()["user"]["email"] == "google-user@example.com"
+    assert response.json()["user"]["is_email_verified"] is True
+    assert response.cookies[settings.AUTH_REFRESH_COOKIE_NAME]["httponly"]
+    assert response.cookies[settings.GOOGLE_OAUTH_NONCE_COOKIE_NAME].value == ""
+    user = django_user_model.objects.get(email="google-user@example.com")
+    assert user.organization_memberships.filter(status=MembershipStatus.ACTIVE).exists()
+    assert AuditLog.objects.filter(action="auth.google_login", user=user).exists()
+
+
+def test_google_login_returns_not_configured_without_client_id():
+    client = APIClient()
+
+    response = client.post(
+        "/api/v1/auth/social/google/",
+        {"credential": "provider-issued-id-token"},
+        format="json",
+    )
+
+    assert response.status_code == 503
 
 
 def test_login_returns_tokens_and_user(django_user_model):
@@ -167,7 +309,45 @@ def test_password_recovery_request_returns_generic_response(django_user_model):
     assert response.status_code == 202
     assert unknown_response.status_code == 202
     assert response.json()["detail"] == unknown_response.json()["detail"]
+    assert len(mail.outbox) == 1
+    assert user.email in mail.outbox[0].to
+    assert "/reset-password?" in mail.outbox[0].body
     assert AuditLog.objects.filter(action="auth.password_recovery_requested").count() == 2
+
+
+def test_password_reset_link_changes_password_revokes_refresh_and_is_single_use(django_user_model):
+    user = make_user(django_user_model, email="reset@example.com", password="SaaSCore!23456")
+    client = APIClient()
+    login_response = client.post(
+        "/api/v1/auth/login/",
+        {"email": user.email, "password": "SaaSCore!23456"},
+        format="json",
+    )
+    refresh_token = login_response.cookies[settings.AUTH_REFRESH_COOKIE_NAME].value
+    client.post("/api/v1/auth/password/recover/", {"email": user.email}, format="json")
+    reset_url = mail.outbox[0].body.splitlines()[-1]
+    query = parse_qs(urlparse(reset_url).query)
+    payload = {
+        "uid": query["uid"][0],
+        "token": query["token"][0],
+        "new_password": "ResetSaaSCore!23456",
+    }
+
+    response = client.post("/api/v1/auth/password/reset/", payload, format="json")
+    reused_response = client.post("/api/v1/auth/password/reset/", payload, format="json")
+    refresh_response = client.post(
+        "/api/v1/auth/refresh/",
+        {"refresh": refresh_token},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.cookies[settings.AUTH_REFRESH_COOKIE_NAME].value == ""
+    assert reused_response.status_code == 400
+    assert refresh_response.status_code == 401
+    user.refresh_from_db()
+    assert user.check_password("ResetSaaSCore!23456")
+    assert AuditLog.objects.filter(action="auth.password_reset_completed", user=user).exists()
 
 
 def test_authenticated_user_can_change_password_and_revoke_refresh_tokens(django_user_model):

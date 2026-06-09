@@ -46,6 +46,8 @@ OBSERVABILITY_REQUIRED_ENV = (
     "SENTRY_DSN",
 )
 
+GOOGLE_LOGIN_REQUIRED_ENV = ("GOOGLE_OAUTH_CLIENT_ID",)
+
 PUBLIC_URL_ENV = (
     "DJANGO_ALLOWED_HOSTS",
     "DJANGO_CSRF_TRUSTED_ORIGINS",
@@ -68,6 +70,7 @@ class Command(BaseCommand):
         parser.add_argument("--require-email", action="store_true")
         parser.add_argument("--require-storage", action="store_true")
         parser.add_argument("--require-observability", action="store_true")
+        parser.add_argument("--require-google-login", action="store_true")
 
     def handle(self, *args, **options):
         environment = options["environment"]
@@ -78,6 +81,9 @@ class Command(BaseCommand):
         required_names += list(STORAGE_REQUIRED_ENV) if options["require_storage"] else []
         required_names += (
             list(OBSERVABILITY_REQUIRED_ENV) if options["require_observability"] else []
+        )
+        required_names += (
+            list(GOOGLE_LOGIN_REQUIRED_ENV) if options["require_google_login"] else []
         )
 
         failures = []

@@ -87,6 +87,31 @@ def assert_feature_enabled(organization, feature_name, default=False):
     return True
 
 
+def entitlements_for_organization(organization):
+    subscription = get_subscription_for_organization(organization)
+    plan = get_effective_plan_for_organization(organization)
+    safe_features = {}
+    if plan is not None and isinstance(plan.features, dict):
+        safe_features = {
+            name: enabled
+            for name, enabled in plan.features.items()
+            if isinstance(name, str) and isinstance(enabled, bool)
+        }
+    return {
+        "organization": organization.id,
+        "plan": (
+            {
+                "slug": plan.slug,
+                "name": plan.name,
+                "status": subscription.status if subscription else "",
+            }
+            if plan is not None
+            else None
+        ),
+        "features": safe_features,
+    }
+
+
 def _stripe_timestamp_to_datetime(value):
     if not value:
         return None

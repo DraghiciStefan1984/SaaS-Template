@@ -22,6 +22,12 @@ behavior, seeded AI providers, structured AI output validation, and AI call logg
 when provider keys are missing. Coverage also includes AI execution planning,
 strategy selection, decision logs, report request creation, job retry state,
 placeholder report generation, notification preferences, and delivery logs.
+Coverage also includes token-based password reset and refresh-token revocation,
+scheduled workflow permissions/execution/dispatch, integration reconnect, and
+role-gated report artifact downloads.
+Coverage also includes signed email verification/resend, mocked Google identity
+login, organization-scoped safe entitlements, deploy requirements for optional
+Google login, and generated OpenAPI route type drift checks.
 
 ## Frontend
 

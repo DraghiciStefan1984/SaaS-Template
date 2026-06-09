@@ -1381,3 +1381,80 @@ Remaining before real production deployment:
 - Configure Stripe test mode before live billing.
 - Add provider API keys only for SaaS products that need real provider calls.
 - Configure domain/DNS, transactional email, and Sentry per environment.
+
+
+2026-06-06 - Priority 0 Reusable SaaS Capabilities
+---------------------------------------------------
+Changed:
+- Completed password recovery with signed reset links, a public password reset
+  endpoint/page, Django email-backend delivery, audit logging, and refresh-token
+  revocation after reset.
+- Added generic owner/admin-managed scheduled report workflows with daily,
+  weekly, and monthly frequency, manual run, pause/resume, run history, Celery
+  Beat dispatch, feature enforcement, and concurrency-safe usage recording.
+- Added explicit integration reconnect for API-key and credential-free providers;
+  OAuth reconnect remains a descriptive provider-specific placeholder.
+- Added audited, owner/admin-only report artifact downloads for database and safe
+  local-file artifacts.
+- Wired the reusable frontend to password reset, scheduled report management,
+  integration disconnect/reconnect, and report artifact download endpoints.
+- Extended privacy export/anonymization handling for scheduled workflows and runs.
+- Updated existing README, API, security, testing, integrations, reports/jobs,
+  and external setup documentation.
+
+Verification:
+- npm.cmd run backend:lint passed.
+- npm.cmd run backend:check passed.
+- npm.cmd run backend:migrations:check passed.
+- Focused backend suite passed: 75 tests.
+- Scheduled workflow suite passed: 22 tests.
+- npm.cmd run frontend:lint passed.
+- npm.cmd run frontend:typecheck passed.
+- npm.cmd run frontend:test passed: 6 tests.
+- npm.cmd run frontend:build passed.
+- npm.cmd run release:check passed, including OpenAPI validation, full backend
+  pytest: 129 tests, and frontend lint/typecheck/test/build.
+
+External/not configured:
+- Production transactional email still requires a configured Django email
+  backend and provider credentials.
+- OAuth integrations still require provider-specific clients, client IDs, and
+  client secrets.
+- S3-compatible artifact download still requires a production storage adapter
+  that issues short-lived presigned URLs.
+
+
+2026-06-09 - Priority 1 Reusable SaaS Capabilities
+---------------------------------------------------
+Changed:
+- Added signed, expiring email verification links, authenticated resend, audit
+  events, local Django email-backend delivery, and a public verification page.
+- Added optional Google identity-token login behind a backend service adapter,
+  safe configuration-status endpoint, verified-email account creation, default
+  workspace creation, short-lived HttpOnly nonce binding, HttpOnly refresh cookie
+  issuance, and frontend GIS button.
+- Added organization-scoped billing entitlements that expose only safe boolean
+  plan features while keeping enforcement server-side.
+- Extended the demo readiness command to validate effective entitlements.
+- Added a dependency-free OpenAPI route/method type generator and drift check
+  integrated into release checks.
+- Kept existing Sentry and seed/demo implementations, and documented their P1
+  readiness without duplicating code.
+- Expanded existing AWS, Stripe test-mode, Replit/cloud IDE, Google login,
+  security, API, testing, and external setup documentation.
+
+Verification:
+- npm.cmd run release:check passed, including OpenAPI validation, generated API
+  type drift verification, full backend pytest: 140 tests, and frontend
+  lint/typecheck/test/build.
+- npm.cmd run docker:config passed.
+- Browser smoke test passed for login with the disabled-until-configured Google
+  state and the public email-verification error state.
+
+External/not configured:
+- Real inbox email delivery still requires SES/Resend/Postmark or another Django
+  email backend and provider credentials.
+- Google login remains disabled until a Web OAuth Client ID is added through
+  `GOOGLE_OAUTH_CLIENT_ID`.
+- Stripe, AWS resources, Sentry DSN, and product-specific provider accounts/keys
+  remain intentionally unconfigured.

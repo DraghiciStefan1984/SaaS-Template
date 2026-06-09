@@ -22,6 +22,7 @@ from .serializers import (
     CheckoutSessionSerializer,
     CustomerPortalSerializer,
     CustomerPortalSessionSerializer,
+    OrganizationEntitlementsSerializer,
     PlanSerializer,
     StripeWebhookResponseSerializer,
     SubscriptionSerializer,
@@ -31,6 +32,7 @@ from .services import (
     construct_stripe_event,
     create_checkout_session,
     create_customer_portal_session,
+    entitlements_for_organization,
     get_subscription_for_organization,
     process_stripe_event,
 )
@@ -78,6 +80,23 @@ class SubscriptionView(OrganizationBillingMixin, APIView):
             else SubscriptionSummarySerializer
         )
         return Response(serializer_class(subscription).data)
+
+
+class OrganizationEntitlementsView(OrganizationBillingMixin, APIView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="organization_id",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                required=True,
+            )
+        ],
+        responses=OrganizationEntitlementsSerializer,
+    )
+    def get(self, request):
+        organization = self.get_user_organization(request.query_params.get("organization_id"))
+        return Response(entitlements_for_organization(organization))
 
 
 class CheckoutView(OrganizationBillingMixin, APIView):

@@ -1,8 +1,11 @@
 from django.db import transaction
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import OpenApiParameter, extend_schema
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import generics, status
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.audit.services import log_audit_event
 from apps.billing.services import assert_feature_enabled
@@ -22,7 +25,7 @@ from .serializers import (
     ReportSummarySerializer,
     ReportTemplateSerializer,
 )
-from .services import create_report_request
+from .services import create_report_request, report_artifact_download
 
 REPORTS_FEATURE = "reports"
 REPORTS_USAGE_METRIC = "generated_reports"
@@ -155,3 +158,48 @@ class ReportArtifactListView(generics.ListAPIView):
         )
         require_organization_role(self.request.user, report.organization, ADMIN_ROLES)
         return ReportArtifact.objects.filter(report=report)
+
+
+class ReportArtifactDownloadView(APIView):
+    throttle_scope = "expensive_action"
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: OpenApiResponse(
+                response=OpenApiTypes.BINARY,
+                description="Organization-authorized report artifact download.",
+            )
+        },
+    )
+    def get(self, request, report_id, artifact_id):
+        artifact = get_object_or_404(
+            ReportArtifact.objects.select_related("report", "report__organization").filter(
+                report_id=report_id,
+                report__organization__memberships__user=request.user,
+                report__organization__memberships__status=MembershipStatus.ACTIVE,
+            ),
+            id=artifact_id,
+        )
+        require_organization_role(request.user, artifact.report.organization, ADMIN_ROLES)
+        download = report_artifact_download(artifact)
+        if download["kind"] == "file":
+            response = FileResponse(
+                download["path"].open("rb"),
+                content_type=download["content_type"],
+                as_attachment=True,
+                filename=download["filename"],
+            )
+        else:
+            response = HttpResponse(download["content"], content_type=download["content_type"])
+            response["Content-Disposition"] = f'attachment; filename="{download["filename"]}"'
+        log_audit_event(
+            action="reports.artifact.downloaded",
+            organization=artifact.report.organization,
+            request=request,
+            category="reports",
+            target_entity_type="report_artifact",
+            target_entity_id=artifact.id,
+            metadata={"report_id": artifact.report_id, "storage_backend": artifact.storage_backend},
+        )
+        return response

@@ -3,6 +3,7 @@ import { FormEvent, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 
 import { LoadingState, SuccessState } from "../components/StateBlock";
+import { GoogleLoginButton } from "../components/GoogleLoginButton";
 import { api, getApiErrorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
@@ -10,7 +11,7 @@ type AuthMode = "login" | "register" | "recover";
 
 export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
   const navigate = useNavigate();
-  const { isAuthenticated, isBootstrapping, login, register } = useAuth();
+  const { isAuthenticated, isBootstrapping, login, loginWithGoogle, register } = useAuth();
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -72,6 +73,20 @@ export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
           ? "/register"
           : "/recover-password",
     );
+  }
+
+  async function handleGoogleCredential(credential: string) {
+    setError("");
+    setSuccess("");
+    setIsSubmitting(true);
+    try {
+      await loginWithGoogle(credential);
+      navigate("/dashboard");
+    } catch (caughtError) {
+      setError(getApiErrorMessage(caughtError, "Google login failed."));
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   const Icon = mode === "login" ? LockKeyhole : mode === "register" ? UserPlus : KeyRound;
@@ -213,6 +228,16 @@ export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
                   : "Send recovery email"}
           </button>
         </form>
+
+        {mode !== "recover" ? (
+          <div className="social-login-section">
+            <span>or</span>
+            <GoogleLoginButton
+              disabled={isSubmitting}
+              onCredential={handleGoogleCredential}
+            />
+          </div>
+        ) : null}
 
         <div className="auth-footer">
           {mode === "login" ? (
