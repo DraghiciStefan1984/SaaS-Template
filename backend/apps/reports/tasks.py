@@ -1,4 +1,5 @@
 from celery import shared_task
+from django.utils import timezone
 
 from apps.ai.services import select_ai_execution_plan
 from apps.jobs.models import JobRun, JobRunStatus
@@ -44,11 +45,16 @@ def generate_report_task(self, report_id, job_run_id=None):
             report=report,
             format=report.requested_format,
             content={
-                "status": "placeholder",
+                "status": "generated",
+                "title": report.title,
+                "generated_at": timezone.now().isoformat(),
                 "execution_plan": execution_plan,
-                "message": "Product-specific report rendering should replace this artifact.",
+                "summary": (
+                    "Generic report artifact created. Product modules can replace or extend "
+                    "this structured content before download rendering."
+                ),
             },
-            metadata={"generated_by": "template_placeholder"},
+            metadata={"generated_by": "template_report_pipeline"},
         )
         mark_report_succeeded(
             report,

@@ -24,6 +24,44 @@ class NotificationDeliveryStatus(models.TextChoices):
     SKIPPED = "skipped", "Skipped"
 
 
+class InAppNotification(models.Model):
+    organization = models.ForeignKey(
+        "organizations.Organization",
+        on_delete=models.CASCADE,
+        related_name="in_app_notifications",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="in_app_notifications",
+    )
+    event = models.CharField(max_length=40, choices=NotificationEvent.choices)
+    title = models.CharField(max_length=240)
+    message = models.TextField(blank=True)
+    target_url = models.CharField(max_length=500, blank=True)
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["organization", "user", "is_read"]),
+            models.Index(fields=["user", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user} {self.event}"
+
+    def mark_read(self):
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save(update_fields=["is_read", "read_at"])
+        return self
+
+
 class NotificationPreference(models.Model):
     organization = models.ForeignKey(
         "organizations.Organization",

@@ -42,7 +42,7 @@ jobs:
         run: npm install --prefix frontend
 
       - name: Verify build before deploy
-        run: npm run check
+        run: npm run release:check
 
       - name: Validate deploy environment
         env:

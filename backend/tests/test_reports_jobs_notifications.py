@@ -1,8 +1,9 @@
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from django.test import override_settings
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 
 from apps.ai.models import AIModelDecisionLog
@@ -11,16 +12,22 @@ from apps.jobs.models import (
     JobRun,
     JobRunStatus,
     ScheduledRun,
+    ScheduledRunTrigger,
     ScheduledWorkflowStatus,
+    ScheduleFrequency,
 )
 from apps.jobs.services import (
+    calculate_next_run_at,
     create_job_run,
     create_scheduled_workflow,
     mark_job_failed,
     mark_job_started,
+    run_scheduled_workflow,
+    set_scheduled_workflow_status,
 )
 from apps.jobs.tasks import dispatch_due_scheduled_workflows
 from apps.notifications.models import (
+    InAppNotification,
     NotificationChannel,
     NotificationDeliveryLog,
     NotificationDeliveryStatus,
@@ -28,13 +35,21 @@ from apps.notifications.models import (
     NotificationPreference,
 )
 from apps.notifications.services import (
+    create_in_app_notification,
+    notification_is_enabled,
+    send_notification,
     send_report_ready_notification,
     upsert_notification_preference,
 )
 from apps.organizations.models import Membership, MembershipRole, MembershipStatus
 from apps.organizations.services import create_organization_for_owner
 from apps.reports.models import Report, ReportArtifact, ReportStatus, ReportTemplate
-from apps.reports.services import create_report_request
+from apps.reports.renderers import render_report_artifact
+from apps.reports.services import (
+    ReportArtifactDownloadUnavailable,
+    create_report_request,
+    report_artifact_download,
+)
 from apps.reports.tasks import generate_report_task
 from apps.usage.models import UsageRecord
 
@@ -292,7 +307,7 @@ def test_generate_report_task_creates_artifact_ai_decision_and_notification(djan
     assert job_run.status == JobRunStatus.SUCCEEDED
     assert result["report_id"] == report.id
     artifact = ReportArtifact.objects.get(report=report)
-    assert artifact.content["status"] == "placeholder"
+    assert artifact.content["status"] == "generated"
     assert artifact.content["execution_plan"]["strategy"] == "low_cost_llm"
     assert AIModelDecisionLog.objects.filter(
         organization=organization,
@@ -302,6 +317,12 @@ def test_generate_report_task_creates_artifact_ai_decision_and_notification(djan
         organization=organization,
         event="report_ready",
         status=NotificationDeliveryStatus.SENT,
+    ).exists()
+    assert InAppNotification.objects.filter(
+        organization=organization,
+        user=owner,
+        event=NotificationEvent.REPORT_READY,
+        is_read=False,
     ).exists()
 
 
@@ -410,6 +431,81 @@ def test_scheduled_dispatch_continues_after_one_workflow_fails(django_user_model
     assert calls == [workflow.id for workflow in workflows]
 
 
+def test_schedule_calculation_handles_month_end_and_rejects_unsupported_frequency():
+    january_31 = datetime(2024, 1, 31, 10, tzinfo=UTC)
+    february_29 = calculate_next_run_at(january_31, ScheduleFrequency.MONTHLY)
+    march_29 = calculate_next_run_at(february_29, ScheduleFrequency.MONTHLY)
+
+    assert february_29.day == 29
+    assert march_29.day == 29
+    assert calculate_next_run_at(january_31, ScheduleFrequency.DAILY) == january_31 + timedelta(
+        days=1
+    )
+    assert calculate_next_run_at(january_31, ScheduleFrequency.WEEKLY) == january_31 + timedelta(
+        days=7
+    )
+    with pytest.raises(ValidationError, match="Unsupported schedule frequency"):
+        calculate_next_run_at(january_31, "hourly")
+
+
+def test_scheduled_workflow_skips_paused_or_not_due_runs_and_resumes_future_schedule(
+    django_user_model,
+):
+    owner = make_user(django_user_model, email="schedule-guard@example.com")
+    organization = create_organization_for_owner(owner, "Schedule Guard Workspace")
+    enable_scheduled_reports(organization)
+    workflow = create_scheduled_workflow(
+        organization=organization,
+        created_by=owner,
+        name="Guarded schedule",
+        frequency=ScheduleFrequency.DAILY,
+        timezone_name="UTC",
+        next_run_at=timezone.now() + timedelta(hours=1),
+        config={"title": "Guarded report", "template_key": "weekly_summary"},
+    )
+
+    assert (
+        run_scheduled_workflow(
+            workflow,
+            trigger=ScheduledRunTrigger.SCHEDULED,
+            require_due=True,
+        )
+        is None
+    )
+
+    workflow.status = ScheduledWorkflowStatus.PAUSED
+    workflow.next_run_at = timezone.now() - timedelta(days=2)
+    workflow.save(update_fields=["status", "next_run_at", "updated_at"])
+    assert run_scheduled_workflow(workflow, trigger=ScheduledRunTrigger.SCHEDULED) is None
+
+    set_scheduled_workflow_status(workflow, ScheduledWorkflowStatus.ACTIVE)
+    workflow.refresh_from_db()
+    assert workflow.status == ScheduledWorkflowStatus.ACTIVE
+    assert workflow.next_run_at > timezone.now()
+
+
+def test_scheduled_workflow_rejects_unsupported_workflow_type(django_user_model):
+    owner = make_user(django_user_model, email="unsupported-workflow@example.com")
+    organization = create_organization_for_owner(owner, "Unsupported Workflow Workspace")
+    enable_scheduled_reports(organization)
+    workflow = create_scheduled_workflow(
+        organization=organization,
+        created_by=owner,
+        name="Unsupported schedule",
+        frequency=ScheduleFrequency.DAILY,
+        timezone_name="UTC",
+        next_run_at=timezone.now() - timedelta(minutes=1),
+        config={},
+    )
+    workflow.workflow_type = "unsupported"
+    workflow.save(update_fields=["workflow_type", "updated_at"])
+
+    with pytest.raises(ValidationError, match="Unsupported scheduled workflow type"):
+        run_scheduled_workflow(workflow, trigger=ScheduledRunTrigger.MANUAL)
+
+    assert not ScheduledRun.objects.filter(workflow=workflow).exists()
+
+
 def test_free_plan_cannot_create_scheduled_workflow(django_user_model):
     owner = make_user(django_user_model, email="free-schedule@example.com")
     organization = create_organization_for_owner(owner, "Free Schedule Workspace")
@@ -490,6 +586,108 @@ def test_admin_can_download_database_artifact_and_member_cannot(django_user_mode
     assert member_response.status_code == 403
 
 
+@pytest.mark.parametrize(
+    ("artifact_format", "content_type", "signature"),
+    [
+        ("json", "application/json", b'"status": "ready"'),
+        ("csv", "text/csv; charset=utf-8", b"key,value"),
+        ("html", "text/html; charset=utf-8", b"<!doctype html>"),
+        ("pdf", "application/pdf", b"%PDF"),
+        (
+            "docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            b"PK",
+        ),
+    ],
+)
+def test_database_artifact_download_renders_requested_format(
+    django_user_model,
+    artifact_format,
+    content_type,
+    signature,
+):
+    owner = make_user(django_user_model, email=f"{artifact_format}@example.com")
+    organization = create_organization_for_owner(owner, f"{artifact_format} Workspace")
+    report = Report.objects.create(
+        organization=organization,
+        created_by=owner,
+        title="Rendered report",
+        status=ReportStatus.SUCCEEDED,
+    )
+    artifact = ReportArtifact.objects.create(
+        report=report,
+        format=artifact_format,
+        content={"status": "ready", "metrics": {"revenue": 1000}},
+    )
+
+    download = report_artifact_download(artifact)
+
+    assert download["kind"] == "content"
+    assert download["content_type"] == content_type
+    assert download["filename"].endswith(f".{artifact_format}")
+    assert download["content"].startswith(signature) or signature in download["content"]
+
+
+def test_local_artifact_download_allows_media_file_and_rejects_escape_or_missing_file(
+    django_user_model,
+    tmp_path,
+):
+    owner = make_user(django_user_model, email="local-artifact@example.com")
+    organization = create_organization_for_owner(owner, "Local Artifact Workspace")
+    report = Report.objects.create(
+        organization=organization,
+        created_by=owner,
+        title="Local artifact",
+        status=ReportStatus.SUCCEEDED,
+    )
+    artifact_file = tmp_path / "reports" / "artifact.json"
+    artifact_file.parent.mkdir()
+    artifact_file.write_text('{"ready": true}', encoding="utf-8")
+    artifact = ReportArtifact.objects.create(
+        report=report,
+        format="json",
+        storage_backend="local",
+        file_path="reports/artifact.json",
+    )
+
+    with override_settings(MEDIA_ROOT=tmp_path):
+        download = report_artifact_download(artifact)
+        assert download["kind"] == "file"
+        assert download["path"] == artifact_file
+
+        artifact.file_path = "../outside.json"
+        with pytest.raises(ReportArtifactDownloadUnavailable):
+            report_artifact_download(artifact)
+
+        artifact.file_path = "reports/missing.json"
+        with pytest.raises(ReportArtifactDownloadUnavailable):
+            report_artifact_download(artifact)
+
+
+def test_report_artifact_download_rejects_unconfigured_storage_and_unknown_format(
+    django_user_model,
+):
+    owner = make_user(django_user_model, email="storage-artifact@example.com")
+    organization = create_organization_for_owner(owner, "Storage Artifact Workspace")
+    report = Report.objects.create(
+        organization=organization,
+        created_by=owner,
+        title="Storage artifact",
+        status=ReportStatus.SUCCEEDED,
+    )
+    artifact = ReportArtifact.objects.create(
+        report=report,
+        format="json",
+        storage_backend="s3",
+        file_path="reports/private.json",
+    )
+
+    with pytest.raises(ReportArtifactDownloadUnavailable):
+        report_artifact_download(artifact)
+    with pytest.raises(ValidationError, match="Unsupported report artifact format"):
+        render_report_artifact(format="xml", content={}, title="Unsupported")
+
+
 def test_generate_report_task_keeps_report_queued_during_retry(
     django_user_model,
     monkeypatch,
@@ -528,6 +726,44 @@ def test_generate_report_task_keeps_report_queued_during_retry(
     assert report.error_message == "Transient provider failure"
     assert report.completed_at is None
     assert job_run.status == JobRunStatus.RETRYING
+
+
+def test_generate_report_task_marks_report_failed_after_retry_budget_is_exhausted(
+    django_user_model,
+    monkeypatch,
+):
+    owner = make_user(django_user_model, email="final-failure@example.com")
+    organization = create_organization_for_owner(owner, "Final Failure Workspace")
+    template = ReportTemplate.objects.get(key="weekly_summary")
+    report = Report.objects.create(
+        organization=organization,
+        created_by=owner,
+        title="Failed Report",
+        template=template,
+        input_payload={"metrics": {"revenue": 1000}},
+    )
+    job_run = create_job_run(
+        organization=organization,
+        created_by=owner,
+        name="Generate report",
+        task_name="apps.reports.tasks.generate_report_task",
+        max_attempts=1,
+    )
+    monkeypatch.setattr(
+        "apps.reports.tasks.create_report_artifact",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("Permanent provider failure")),
+    )
+
+    with pytest.raises(RuntimeError, match="Permanent provider failure"):
+        generate_report_task(report.id, job_run.id)
+
+    report.refresh_from_db()
+    job_run.refresh_from_db()
+    assert report.status == ReportStatus.FAILED
+    assert report.error_message == "Permanent provider failure"
+    assert report.completed_at is not None
+    assert job_run.status == JobRunStatus.FAILED
+    assert job_run.attempts == 1
 
 
 def test_job_run_failure_marks_retrying_until_attempts_are_exhausted(django_user_model):
@@ -577,6 +813,92 @@ def test_disabled_notification_preference_skips_delivery(django_user_model):
     assert "disabled" in delivery_log.error_message
 
 
+@override_settings(EMAIL_PROVIDER="resend")
+def test_unconfigured_email_and_webhook_notifications_fail_descriptively(django_user_model):
+    owner = make_user(django_user_model, email="notification-provider@example.com")
+    organization = create_organization_for_owner(owner, "Notification Provider Workspace")
+
+    email_log = send_notification(
+        organization=organization,
+        user=owner,
+        event=NotificationEvent.SYSTEM_ALERT,
+        channel=NotificationChannel.EMAIL,
+        recipient=owner.email,
+        subject="Email alert",
+    )
+    webhook_log = send_notification(
+        organization=organization,
+        user=owner,
+        event=NotificationEvent.SYSTEM_ALERT,
+        channel=NotificationChannel.WEBHOOK,
+        subject="Webhook alert",
+    )
+
+    assert email_log.status == NotificationDeliveryStatus.FAILED
+    assert "resend" in email_log.error_message
+    assert webhook_log.status == NotificationDeliveryStatus.FAILED
+    assert "not configured" in webhook_log.error_message
+
+
+def test_in_app_notification_requires_user_and_sanitizes_external_target(django_user_model):
+    owner = make_user(django_user_model, email="safe-target@example.com")
+    organization = create_organization_for_owner(owner, "Safe Target Workspace")
+
+    with pytest.raises(ValueError, match="require a target user"):
+        create_in_app_notification(
+            organization=organization,
+            user=None,
+            event=NotificationEvent.SYSTEM_ALERT,
+            title="Missing user",
+        )
+
+    notification = create_in_app_notification(
+        organization=organization,
+        user=owner,
+        event=NotificationEvent.SYSTEM_ALERT,
+        title="Unsafe target",
+        target_url="https://evil.example/phishing",
+    )
+    assert notification.target_url == ""
+
+
+def test_user_notification_preference_overrides_organization_default(django_user_model):
+    owner = make_user(django_user_model, email="preference@example.com")
+    organization = create_organization_for_owner(owner, "Preference Workspace")
+    upsert_notification_preference(
+        organization=organization,
+        event=NotificationEvent.SYSTEM_ALERT,
+        channel=NotificationChannel.EMAIL,
+        is_enabled=False,
+    )
+    assert (
+        notification_is_enabled(
+            organization=organization,
+            user=owner,
+            event=NotificationEvent.SYSTEM_ALERT,
+            channel=NotificationChannel.EMAIL,
+        )
+        is False
+    )
+
+    upsert_notification_preference(
+        organization=organization,
+        user=owner,
+        event=NotificationEvent.SYSTEM_ALERT,
+        channel=NotificationChannel.EMAIL,
+        is_enabled=True,
+    )
+    assert (
+        notification_is_enabled(
+            organization=organization,
+            user=owner,
+            event=NotificationEvent.SYSTEM_ALERT,
+            channel=NotificationChannel.EMAIL,
+        )
+        is True
+    )
+
+
 def test_member_can_only_update_own_notification_preference(django_user_model):
     owner = make_user(django_user_model, email="owner@example.com")
     member = make_user(django_user_model, email="member@example.com")
@@ -623,6 +945,89 @@ def test_member_can_only_update_own_notification_preference(django_user_model):
         event=NotificationEvent.REPORT_READY,
         channel=NotificationChannel.EMAIL,
     ).is_enabled is False
+
+
+def test_member_can_list_and_mark_only_own_in_app_notifications(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    member = make_user(django_user_model, email="member@example.com")
+    other_member = make_user(django_user_model, email="other-member@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    for user in (member, other_member):
+        Membership.objects.create(
+            organization=organization,
+            user=user,
+            role=MembershipRole.MEMBER,
+            status=MembershipStatus.ACTIVE,
+        )
+    member_log = send_notification(
+        organization=organization,
+        user=member,
+        event=NotificationEvent.SYSTEM_ALERT,
+        channel=NotificationChannel.IN_APP,
+        subject="Member alert",
+        payload={"message": "Visible to member", "target_url": "/dashboard"},
+    )
+    send_notification(
+        organization=organization,
+        user=other_member,
+        event=NotificationEvent.SYSTEM_ALERT,
+        channel=NotificationChannel.IN_APP,
+        subject="Other alert",
+    )
+    member_notification = InAppNotification.objects.get(
+        user=member,
+        id=int(member_log.provider_message_id.removeprefix("in-app-")),
+    )
+    other_notification = InAppNotification.objects.get(user=other_member)
+    client = APIClient()
+    client.force_authenticate(member)
+
+    list_response = client.get(
+        f"/api/v1/notifications/in-app/?organization_id={organization.id}"
+    )
+    other_read_response = client.post(
+        f"/api/v1/notifications/in-app/{other_notification.id}/read/",
+        {},
+        format="json",
+    )
+    read_response = client.post(
+        f"/api/v1/notifications/in-app/{member_notification.id}/read/",
+        {},
+        format="json",
+    )
+
+    assert list_response.status_code == 200
+    assert [item["title"] for item in list_response.json()["results"]] == ["Member alert"]
+    assert other_read_response.status_code == 404
+    assert read_response.status_code == 200
+    member_notification.refresh_from_db()
+    assert member_notification.is_read is True
+    assert member_notification.read_at is not None
+
+
+def test_member_can_mark_all_own_in_app_notifications_read(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    for index in range(2):
+        send_notification(
+            organization=organization,
+            user=owner,
+            event=NotificationEvent.SYSTEM_ALERT,
+            channel=NotificationChannel.IN_APP,
+            subject=f"Alert {index}",
+        )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        "/api/v1/notifications/in-app/read-all/",
+        {"organization_id": organization.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["updated"] == 2
+    assert not InAppNotification.objects.filter(user=owner, is_read=False).exists()
 
 
 def test_member_cannot_list_sensitive_job_or_notification_logs(django_user_model):

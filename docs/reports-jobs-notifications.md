@@ -2,8 +2,8 @@
 
 Phase 5 adds reusable foundations for queued reporting workflows and notification
 delivery. The implementation is intentionally product-agnostic: it creates the
-workflow state, audit logs, and extension points, while product-specific report
-rendering and real provider delivery can be plugged in later.
+workflow state, audit logs, generic artifact rendering, and extension points,
+while product-specific analysis and real provider delivery can be plugged in later.
 
 ## Reports
 
@@ -26,10 +26,12 @@ Current behavior:
 
 - Default templates are seeded for weekly summaries and table analysis.
 - Creating a report also creates a `JobRun`.
-- The Celery task `apps.reports.tasks.generate_report_task` is a safe placeholder:
-  it selects an AI execution plan, creates a JSON artifact, marks the report
-  succeeded, and sends a console notification.
-- Product-specific report rendering should replace the placeholder artifact logic.
+- The Celery task `apps.reports.tasks.generate_report_task` selects an AI execution
+  plan, creates generic structured artifact content, marks the report succeeded,
+  and sends email/in-app notifications.
+- Database artifacts are rendered at download time as JSON, CSV, HTML, PDF, or
+  DOCX. Product modules should replace or extend the structured content with
+  domain-specific results.
 - Owner/admin users can download database or safe local-file artifacts through an
   audited, organization-scoped endpoint.
 - S3-compatible artifacts require a production storage adapter that returns a
@@ -79,12 +81,16 @@ Core models:
 
 - `NotificationPreference`: organization/user event preferences by channel.
 - `NotificationDeliveryLog`: provider-independent delivery tracking.
+- `InAppNotification`: user-scoped notification-center state with read timestamps.
 
 Implemented endpoints:
 
 - `GET /api/v1/notifications/preferences/?organization_id=...`
 - `POST /api/v1/notifications/preferences/`
 - `GET /api/v1/notifications/delivery-logs/?organization_id=...`
+- `GET /api/v1/notifications/in-app/?organization_id=...`
+- `POST /api/v1/notifications/in-app/{id}/read/`
+- `POST /api/v1/notifications/in-app/read-all/`
 
 Current behavior:
 
@@ -92,7 +98,8 @@ Current behavior:
 - `EMAIL_PROVIDER=console` marks delivery as sent with a local placeholder message ID.
 - Other email providers return failed delivery logs until SES/Resend/Postmark clients
   are implemented behind the notification service layer.
-- In-app notifications are marked sent locally.
+- In-app notifications create user-visible, organization-scoped records without
+  exposing delivery payloads or provider metadata.
 - Webhook delivery is intentionally not configured yet.
 
 ## Product Extension Rule

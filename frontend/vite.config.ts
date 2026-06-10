@@ -9,6 +9,14 @@ export default defineConfig({
     port: 5173,
   },
   test: {
+    coverage: {
+      thresholds: {
+        branches: 50,
+        functions: 40,
+        lines: 50,
+        statements: 50,
+      },
+    },
     environment: "jsdom",
     exclude: ["tests/e2e/**", "node_modules/**", "dist/**"],
     globals: true,

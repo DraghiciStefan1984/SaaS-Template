@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from django.conf import settings
@@ -10,6 +9,7 @@ from rest_framework.exceptions import APIException, ValidationError
 from apps.jobs.services import create_job_run
 
 from .models import Report, ReportArtifact, ReportStatus, ReportTemplate
+from .renderers import render_report_artifact
 
 
 class ReportArtifactDownloadUnavailable(APIException):
@@ -153,11 +153,16 @@ def create_report_artifact(
 def report_artifact_download(artifact):
     filename_base = f"{slugify(artifact.report.title) or 'report'}-{artifact.id}"
     if artifact.storage_backend == "database":
+        rendered = render_report_artifact(
+            format=artifact.format,
+            content=artifact.content,
+            title=artifact.report.title,
+        )
         return {
             "kind": "content",
-            "content": json.dumps(artifact.content, indent=2, sort_keys=True).encode(),
-            "content_type": "application/json",
-            "filename": f"{filename_base}.json",
+            "content": rendered.content,
+            "content_type": rendered.content_type,
+            "filename": f"{filename_base}.{rendered.extension}",
         }
     if artifact.storage_backend == "local" and artifact.file_path:
         media_root = Path(settings.MEDIA_ROOT).resolve()

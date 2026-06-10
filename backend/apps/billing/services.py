@@ -127,6 +127,21 @@ def _object_get(value, key, default=None):
         return default
 
 
+def _plain_mapping(value):
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        try:
+            return to_dict(for_json=True)
+        except TypeError:
+            return to_dict()
+    if isinstance(value, dict):
+        return dict(value)
+    try:
+        return dict(value)
+    except (KeyError, TypeError, ValueError):
+        return {}
+
+
 def create_checkout_session(organization, plan, success_url, cancel_url):
     if not settings.STRIPE_SECRET_KEY:
         raise BillingProviderNotConfigured()
@@ -185,7 +200,7 @@ def construct_stripe_event(payload, signature):
 
 @transaction.atomic
 def sync_checkout_session_completed(session):
-    metadata = _object_get(session, "metadata", {}) or {}
+    metadata = _plain_mapping(_object_get(session, "metadata", {}) or {})
     organization_id = _object_get(metadata, "organization_id")
     plan_slug = _object_get(metadata, "plan_slug")
     if not organization_id or not plan_slug:
@@ -218,7 +233,7 @@ def sync_checkout_session_completed(session):
 @transaction.atomic
 def sync_stripe_subscription(stripe_subscription):
     subscription_id = _object_get(stripe_subscription, "id")
-    metadata = _object_get(stripe_subscription, "metadata", {}) or {}
+    metadata = _plain_mapping(_object_get(stripe_subscription, "metadata", {}) or {})
     organization_id = _object_get(metadata, "organization_id")
     plan_slug = _object_get(metadata, "plan_slug")
 

@@ -23,7 +23,8 @@ All APIs should use `/api/v1/` as the initial version prefix.
 - Auth: registration, login, refresh, logout, current user profile, email
   verification/resend, optional Google identity login, password recovery request,
   token-based password reset, password change
-- Organizations: organization CRUD, members list, invite placeholder
+- Organizations: organization CRUD, members list, signed invitation
+  send/resend/cancel/accept workflow
 - Billing: public plan list, organization subscription, safe boolean entitlements,
   checkout placeholder, customer portal placeholder, Stripe webhook endpoint
 - Usage: organization usage summary
@@ -32,6 +33,8 @@ All APIs should use `/api/v1/` as the initial version prefix.
 - AI: provider registry, prompt template list, organization-scoped call logs
 - Jobs and reports: report requests, secure artifact download, job history,
   scheduled report creation/actions/run history
+- Notifications: preferences, admin-only delivery logs, user-scoped in-app
+  notification center and read state
 - Privacy: export requests, deletion requests, owner/requester-scoped deletion
   execution
 

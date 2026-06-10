@@ -4,12 +4,16 @@ DEBUG = False
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": ":memory:",
+TEST_DATABASE_URL = env("TEST_DATABASE_URL", default="")  # noqa: F405
+if TEST_DATABASE_URL:
+    DATABASES = {"default": env.db_url_config(TEST_DATABASE_URL)}  # noqa: F405
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": ":memory:",
+        }
     }
-}
 
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True

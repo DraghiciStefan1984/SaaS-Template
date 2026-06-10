@@ -8,8 +8,10 @@ import type {
   ExampleInsightRequest,
   IntegrationAccount,
   IntegrationProvider,
+  InAppNotification,
   JobRun,
   GoogleLoginStatus,
+  Membership,
   NotificationDeliveryLog,
   NotificationPreference,
   Organization,
@@ -284,6 +286,42 @@ export const api = {
       token,
       body: payload,
     }),
+  acceptOrganizationInvitation: (token: string, invitationToken: string) =>
+    apiRequest<Membership>("/organizations/invitations/accept/", {
+      method: "POST",
+      token,
+      body: { token: invitationToken },
+    }),
+  organizationMembers: (token: string, organizationId: number) =>
+    apiRequest<Membership[]>(`/organizations/${organizationId}/members/`, { token }),
+  inviteOrganizationMember: (
+    token: string,
+    organizationId: number,
+    payload: { email: string; role: string },
+  ) =>
+    apiRequest<Membership>(`/organizations/${organizationId}/invite-member/`, {
+      method: "POST",
+      token,
+      body: payload,
+    }),
+  resendOrganizationInvitation: (
+    token: string,
+    organizationId: number,
+    membershipId: number,
+  ) =>
+    apiRequest<Membership>(
+      `/organizations/${organizationId}/invitations/${membershipId}/resend/`,
+      { method: "POST", token, body: {} },
+    ),
+  cancelOrganizationInvitation: (
+    token: string,
+    organizationId: number,
+    membershipId: number,
+  ) =>
+    apiRequest<Membership>(
+      `/organizations/${organizationId}/invitations/${membershipId}/cancel/`,
+      { method: "POST", token, body: {} },
+    ),
   plans: () => apiRequest<Plan[]>("/billing/plans/"),
   subscription: (token: string, organizationId: number) =>
     apiRequest<Subscription>(`/billing/subscription/?organization_id=${organizationId}`, { token }),
@@ -464,6 +502,23 @@ export const api = {
       `/notifications/delivery-logs/?organization_id=${organizationId}`,
       { token },
     ),
+  inAppNotifications: (token: string, organizationId: number) =>
+    apiRequest<Paginated<InAppNotification>>(
+      `/notifications/in-app/?organization_id=${organizationId}`,
+      { token },
+    ),
+  markInAppNotificationRead: (token: string, notificationId: number) =>
+    apiRequest<InAppNotification>(`/notifications/in-app/${notificationId}/read/`, {
+      method: "POST",
+      token,
+      body: {},
+    }),
+  markAllInAppNotificationsRead: (token: string, organizationId: number) =>
+    apiRequest<{ updated: number }>("/notifications/in-app/read-all/", {
+      method: "POST",
+      token,
+      body: { organization_id: organizationId },
+    }),
   dataDeletionRequests: (token: string, organizationId: number) =>
     apiRequest<Paginated<DataDeletionRequest>>(
       `/privacy/deletion-requests/?organization_id=${organizationId}`,

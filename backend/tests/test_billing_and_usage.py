@@ -2,8 +2,11 @@ import hashlib
 import hmac
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
+from django.db import close_old_connections, connection
 from django.test import override_settings
 from rest_framework.test import APIClient
 
@@ -14,7 +17,11 @@ from apps.billing.models import (
     Subscription,
     SubscriptionStatus,
 )
-from apps.billing.services import feature_enabled_for_organization
+from apps.billing.services import (
+    create_checkout_session,
+    create_customer_portal_session,
+    feature_enabled_for_organization,
+)
 from apps.organizations.models import Membership, MembershipRole, MembershipStatus
 from apps.organizations.services import create_organization_for_owner
 from apps.usage.models import UsageRecord
@@ -246,6 +253,75 @@ def test_customer_portal_rejects_unapproved_return_url(django_user_model):
     assert "return_url" in response.json()
 
 
+@override_settings(STRIPE_SECRET_KEY="sk_test_placeholder")
+def test_configured_checkout_service_calls_stripe_with_org_and_plan_metadata(
+    django_user_model,
+    monkeypatch,
+):
+    owner = make_user(django_user_model, email="stripe-checkout@example.com")
+    organization = create_organization_for_owner(owner, "Stripe Checkout Workspace")
+    plan = Plan.objects.get(slug="starter")
+    plan.stripe_price_id = "price_starter_test"
+    plan.save(update_fields=["stripe_price_id", "updated_at"])
+    calls = []
+
+    def fake_create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(url="https://checkout.stripe.test/session", id="cs_test_123")
+
+    monkeypatch.setattr("stripe.checkout.Session.create", fake_create)
+
+    result = create_checkout_session(
+        organization,
+        plan,
+        "http://localhost:5173/dashboard/plan",
+        "http://localhost:5173/dashboard/plan",
+    )
+
+    assert result == {
+        "checkout_url": "https://checkout.stripe.test/session",
+        "checkout_session_id": "cs_test_123",
+    }
+    assert calls[0]["line_items"] == [{"price": "price_starter_test", "quantity": 1}]
+    assert calls[0]["metadata"] == {
+        "organization_id": str(organization.id),
+        "plan_slug": "starter",
+    }
+    assert calls[0]["subscription_data"]["metadata"] == calls[0]["metadata"]
+
+
+@override_settings(STRIPE_SECRET_KEY="sk_test_placeholder")
+def test_configured_customer_portal_service_calls_stripe_for_subscription(
+    django_user_model,
+    monkeypatch,
+):
+    owner = make_user(django_user_model, email="stripe-portal@example.com")
+    organization = create_organization_for_owner(owner, "Stripe Portal Workspace")
+    subscription = organization.subscription
+    subscription.stripe_customer_id = "cus_test_123"
+    subscription.save(update_fields=["stripe_customer_id", "updated_at"])
+    calls = []
+
+    def fake_create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(url="https://billing.stripe.test/session")
+
+    monkeypatch.setattr("stripe.billing_portal.Session.create", fake_create)
+
+    result = create_customer_portal_session(
+        subscription,
+        "http://localhost:5173/dashboard/plan",
+    )
+
+    assert result == {"portal_url": "https://billing.stripe.test/session"}
+    assert calls == [
+        {
+            "customer": "cus_test_123",
+            "return_url": "http://localhost:5173/dashboard/plan",
+        }
+    ]
+
+
 def test_usage_records_are_summarized_for_current_plan(django_user_model):
     owner = make_user(django_user_model, email="owner@example.com")
     organization = create_organization_for_owner(owner, "Owner Workspace")
@@ -304,6 +380,39 @@ def test_atomic_usage_check_records_or_blocks_in_one_operation(django_user_model
             source="test.atomic",
         )
     assert UsageRecord.objects.filter(organization=organization).count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_usage_reservations_cannot_exceed_limit_on_postgresql(django_user_model):
+    if connection.vendor != "postgresql":
+        pytest.skip("SELECT FOR UPDATE concurrency semantics require PostgreSQL.")
+
+    owner = make_user(django_user_model, email="concurrent-usage@example.com")
+    organization = create_organization_for_owner(owner, "Concurrent Usage Workspace")
+
+    def reserve_full_limit():
+        close_old_connections()
+        try:
+            check_and_record_usage(
+                organization,
+                "one_click_requests",
+                quantity=3,
+                source="test.concurrent",
+            )
+            return "recorded"
+        except UsageLimitExceeded:
+            return "blocked"
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _index: reserve_full_limit(), range(2)))
+
+    assert sorted(outcomes) == ["blocked", "recorded"]
+    assert UsageRecord.objects.filter(
+        organization=organization,
+        metric_name="one_click_requests",
+    ).count() == 1
 
 
 def test_stripe_webhook_requires_configuration():
@@ -448,3 +557,65 @@ def test_stripe_webhook_invalid_metadata_is_skipped_without_500():
     assert StripeWebhookEvent.objects.get(event_id="evt_invalid_metadata").status == (
         StripeWebhookEventStatus.SKIPPED
     )
+
+
+@override_settings(STRIPE_WEBHOOK_SECRET="whsec_test")
+@pytest.mark.parametrize(
+    ("event_type", "stripe_status", "cancel_at_period_end"),
+    [
+        ("customer.subscription.updated", "active", True),
+        ("customer.subscription.deleted", "canceled", False),
+    ],
+)
+def test_signed_subscription_webhooks_sync_subscription_lifecycle(
+    django_user_model,
+    event_type,
+    stripe_status,
+    cancel_at_period_end,
+):
+    owner = make_user(django_user_model, email=f"{stripe_status}@example.com")
+    organization = create_organization_for_owner(owner, f"{stripe_status} Workspace")
+    subscription = organization.subscription
+    subscription.stripe_subscription_id = "sub_lifecycle_123"
+    subscription.save(update_fields=["stripe_subscription_id", "updated_at"])
+    payload = json.dumps(
+        {
+            "id": f"evt_{stripe_status}",
+            "object": "event",
+            "type": event_type,
+            "data": {
+                "object": {
+                    "id": "sub_lifecycle_123",
+                    "object": "subscription",
+                    "customer": "cus_lifecycle_123",
+                    "status": stripe_status,
+                    "cancel_at_period_end": cancel_at_period_end,
+                    "current_period_start": 1_700_000_000,
+                    "current_period_end": 1_702_592_000,
+                    "metadata": {
+                        "organization_id": str(organization.id),
+                        "plan_slug": "pro",
+                    },
+                }
+            },
+        },
+        separators=(",", ":"),
+    )
+    client = APIClient()
+
+    response = client.post(
+        "/api/v1/billing/webhooks/stripe/",
+        data=payload,
+        content_type="application/json",
+        HTTP_STRIPE_SIGNATURE=stripe_signature_header(payload, "whsec_test"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["processed"] is True
+    subscription.refresh_from_db()
+    assert subscription.plan.slug == "pro"
+    assert subscription.status == stripe_status
+    assert subscription.stripe_customer_id == "cus_lifecycle_123"
+    assert subscription.cancel_at_period_end is cancel_at_period_end
+    assert subscription.current_period_start is not None
+    assert subscription.current_period_end is not None

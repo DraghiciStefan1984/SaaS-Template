@@ -1,8 +1,8 @@
 from rest_framework import serializers
 
-from .models import Membership, MembershipStatus, Organization
+from .models import Membership, Organization
 from .permissions import get_active_membership
-from .services import create_organization_for_owner
+from .services import create_or_refresh_membership_invitation, create_organization_for_owner
 
 
 class OrganizationUserSerializer(serializers.Serializer):
@@ -73,16 +73,13 @@ class InviteMemberSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=("admin", "member"), default="member")
 
     def create(self, validated_data):
-        organization = self.context["organization"]
-        invited_by = self.context["request"].user
-
-        # Email delivery is intentionally not connected yet. When the selected
-        # email provider account exists, route invite sending through NotificationService.
-        return Membership.objects.create(
-            organization=organization,
-            user=None,
+        return create_or_refresh_membership_invitation(
+            organization=self.context["organization"],
+            invited_by=self.context["request"].user,
+            email=validated_data["email"],
             role=validated_data["role"],
-            status=MembershipStatus.INVITED,
-            invited_email=validated_data["email"],
-            invited_by=invited_by,
         )
+
+
+class AcceptInvitationSerializer(serializers.Serializer):
+    token = serializers.CharField(max_length=2048)

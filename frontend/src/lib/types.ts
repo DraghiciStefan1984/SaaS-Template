@@ -36,6 +36,17 @@ export type Organization = {
   updated_at: string;
 };
 
+export type Membership = {
+  id: number;
+  organization: number;
+  user: User | null;
+  role: string;
+  status: string;
+  invited_email: string;
+  joined_at: string;
+  created_at: string;
+};
+
 export type Plan = {
   id: number;
   name: string;
@@ -241,6 +252,18 @@ export type NotificationPreference = {
   event: string;
   channel: string;
   is_enabled: boolean;
+};
+
+export type InAppNotification = {
+  id: number;
+  organization: number;
+  event: string;
+  title: string;
+  message: string;
+  target_url: string;
+  is_read: boolean;
+  read_at: string | null;
+  created_at: string;
 };
 
 export type NotificationDeliveryLog = {

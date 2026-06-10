@@ -3,11 +3,37 @@ from rest_framework import serializers
 from apps.common.serializers import validate_json_payload_size
 
 from .models import (
+    InAppNotification,
     NotificationChannel,
     NotificationDeliveryLog,
     NotificationEvent,
     NotificationPreference,
 )
+
+
+class InAppNotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InAppNotification
+        fields = (
+            "id",
+            "organization",
+            "event",
+            "title",
+            "message",
+            "target_url",
+            "is_read",
+            "read_at",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class InAppNotificationReadAllSerializer(serializers.Serializer):
+    organization_id = serializers.IntegerField()
+
+
+class InAppNotificationReadAllResponseSerializer(serializers.Serializer):
+    updated = serializers.IntegerField()
 
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):

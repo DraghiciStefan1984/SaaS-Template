@@ -118,9 +118,11 @@ Recommended options:
 - Resend for simpler setup and staging.
 
 Local development should continue using `EMAIL_PROVIDER=console` until real
-delivery is required. Current notification services create delivery logs and mark
-console email as sent locally. SES/Resend/Postmark clients should be added behind
-the notification service layer when production email is needed.
+delivery is required. Password reset, email verification, and organization
+invitation emails already use the configured Django email backend, so they appear
+in the local console backend. Notification delivery logs and the in-app
+notification center work without a provider account. SES/Resend/Postmark should
+be configured behind the Django email/service layer when production email is needed.
 
 ## Implementation Rule
 

@@ -1,11 +1,38 @@
 from django.conf import settings
 
 from .models import (
+    InAppNotification,
     NotificationChannel,
     NotificationDeliveryLog,
     NotificationEvent,
     NotificationPreference,
 )
+
+
+def create_in_app_notification(
+    *,
+    organization,
+    user,
+    event,
+    title,
+    message="",
+    target_url="",
+    metadata=None,
+):
+    if user is None:
+        raise ValueError("In-app notifications require a target user.")
+    safe_target_url = (
+        target_url if target_url.startswith("/") and not target_url.startswith("//") else ""
+    )
+    return InAppNotification.objects.create(
+        organization=organization,
+        user=user,
+        event=event,
+        title=title,
+        message=message,
+        target_url=safe_target_url,
+        metadata=metadata or {},
+    )
 
 
 def upsert_notification_preference(
@@ -119,14 +146,25 @@ def send_notification(
         )
 
     if channel == NotificationChannel.IN_APP:
-        return log.mark_sent(provider_message_id=f"in-app-{log.id}")
+        if user is None:
+            return log.mark_failed("In-app notifications require a target user.")
+        notification = create_in_app_notification(
+            organization=organization,
+            user=user,
+            event=event,
+            title=subject or event.replace("_", " ").title(),
+            message=(payload or {}).get("message", ""),
+            target_url=(payload or {}).get("target_url", ""),
+            metadata=metadata,
+        )
+        return log.mark_sent(provider_message_id=f"in-app-{notification.id}")
 
     return log.mark_failed("Webhook delivery is not configured in the core template yet.")
 
 
 def send_report_ready_notification(report):
     recipient = report.created_by.email if report.created_by else ""
-    return send_notification(
+    email_log = send_notification(
         organization=report.organization,
         user=report.created_by,
         event=NotificationEvent.REPORT_READY,
@@ -140,3 +178,17 @@ def send_report_ready_notification(report):
         },
         metadata={"source": "reports.generate_report_task"},
     )
+    if report.created_by:
+        send_notification(
+            organization=report.organization,
+            user=report.created_by,
+            event=NotificationEvent.REPORT_READY,
+            channel=NotificationChannel.IN_APP,
+            subject=f"Report ready: {report.title}",
+            payload={
+                "message": "Your report is ready to review.",
+                "target_url": "/dashboard/reports",
+            },
+            metadata={"source": "reports.generate_report_task", "report_id": report.id},
+        )
+    return email_log

@@ -26,9 +26,11 @@ const secretPatterns = [
 const scaffoldRequiredSnippets = [
   "assert_feature_enabled",
   "check_and_record_usage",
-  "validate_json_payload_size",
+  "validate_json_object",
   "RequestSummarySerializer",
   "TODO(privacy)",
+  "TODO(report)",
+  "TODO(notification)",
 ];
 
 const failures = [];

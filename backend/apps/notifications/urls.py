@@ -1,6 +1,12 @@
 from django.urls import path
 
-from .views import NotificationDeliveryLogListView, NotificationPreferenceListCreateView
+from .views import (
+    InAppNotificationListView,
+    InAppNotificationReadAllView,
+    InAppNotificationReadView,
+    NotificationDeliveryLogListView,
+    NotificationPreferenceListCreateView,
+)
 
 urlpatterns = [
     path(
@@ -13,4 +19,7 @@ urlpatterns = [
         NotificationDeliveryLogListView.as_view(),
         name="notification-delivery-logs",
     ),
+    path("in-app/", InAppNotificationListView.as_view(), name="in-app-notifications"),
+    path("in-app/read-all/", InAppNotificationReadAllView.as_view(), name="in-app-read-all"),
+    path("in-app/<int:pk>/read/", InAppNotificationReadView.as_view(), name="in-app-read"),
 ]

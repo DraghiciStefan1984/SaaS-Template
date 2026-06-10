@@ -16,7 +16,11 @@ from apps.integrations.models import (
     IntegrationSyncLog,
 )
 from apps.jobs.models import JobRun, ScheduledRun, ScheduledWorkflow
-from apps.notifications.models import NotificationDeliveryLog, NotificationPreference
+from apps.notifications.models import (
+    InAppNotification,
+    NotificationDeliveryLog,
+    NotificationPreference,
+)
 from apps.products.example_insights.models import ExampleInsightRequest
 from apps.reports.models import Report, ReportArtifact
 from apps.usage.models import UsageRecord
@@ -265,6 +269,24 @@ def build_organization_export_payload(organization):
             .select_related("user")
             .order_by("id")
         ],
+        "in_app_notifications": [
+            {
+                "id": notification.id,
+                "user": _user_payload(notification.user),
+                "event": notification.event,
+                "title": notification.title,
+                "message": notification.message,
+                "target_url": notification.target_url,
+                "is_read": notification.is_read,
+                "read_at": _iso(notification.read_at),
+                "created_at": _iso(notification.created_at),
+            }
+            for notification in InAppNotification.objects.filter(
+                organization=organization
+            )
+            .select_related("user")
+            .order_by("id")
+        ],
         "integration_accounts": [
             {
                 "id": account.id,
@@ -458,6 +480,20 @@ def build_account_export_payload(*, organization, user):
             }
             for workflow in ScheduledWorkflow.objects.filter(created_by=user).order_by("id")
         ],
+        "in_app_notifications": [
+            {
+                "id": notification.id,
+                "organization_id": notification.organization_id,
+                "event": notification.event,
+                "title": notification.title,
+                "message": notification.message,
+                "target_url": notification.target_url,
+                "is_read": notification.is_read,
+                "read_at": _iso(notification.read_at),
+                "created_at": _iso(notification.created_at),
+            }
+            for notification in InAppNotification.objects.filter(user=user).order_by("id")
+        ],
     }
 
 
@@ -594,6 +630,12 @@ def _anonymize_organization(organization):
         error_message="",
         metadata={},
     )
+    InAppNotification.objects.filter(organization=organization).update(
+        title="Deleted notification",
+        message="",
+        target_url="",
+        metadata={},
+    )
     IntegrationCredential.objects.filter(
         integration_account__organization=organization
     ).delete()
@@ -640,6 +682,12 @@ def _anonymize_account(deletion_request):
     if user is None:
         return
     ScheduledWorkflow.objects.filter(created_by=user).update(created_by=None)
+    InAppNotification.objects.filter(user=user).update(
+        title="Deleted notification",
+        message="",
+        target_url="",
+        metadata={},
+    )
     user.organization_memberships.update(
         invited_email="",
         status="disabled",

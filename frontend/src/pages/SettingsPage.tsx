@@ -1,4 +1,15 @@
-import { BellRing, CalendarClock, Pause, Play, Plus, Settings, SlidersHorizontal } from "lucide-react";
+import {
+  BellRing,
+  CalendarClock,
+  Pause,
+  Play,
+  Plus,
+  RotateCcw,
+  Settings,
+  SlidersHorizontal,
+  UserPlus,
+  X,
+} from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -294,6 +305,148 @@ function ScheduledWorkflowsPanel({
   );
 }
 
+function TeamPanel({
+  accessToken,
+  canManage,
+  selectedOrganization,
+}: {
+  accessToken: string;
+  canManage: boolean;
+  selectedOrganization: Organization | null;
+}) {
+  const queryClient = useQueryClient();
+  const organizationId = selectedOrganization?.id;
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("member");
+  const membersQuery = useQuery({
+    enabled: Boolean(accessToken && organizationId && canManage),
+    queryKey: ["organization-members", organizationId],
+    queryFn: () => api.organizationMembers(accessToken, organizationId!),
+  });
+  const inviteMutation = useMutation({
+    mutationFn: () =>
+      api.inviteOrganizationMember(accessToken, organizationId!, {
+        email,
+        role,
+      }),
+    onSuccess: () => {
+      setEmail("");
+      queryClient.invalidateQueries({ queryKey: ["organization-members", organizationId] });
+    },
+  });
+  const invitationActionMutation = useMutation({
+    mutationFn: ({ membershipId, action }: { membershipId: number; action: string }) =>
+      action === "resend"
+        ? api.resendOrganizationInvitation(accessToken, organizationId!, membershipId)
+        : api.cancelOrganizationInvitation(accessToken, organizationId!, membershipId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["organization-members", organizationId] });
+    },
+  });
+
+  function handleInvite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    inviteMutation.mutate();
+  }
+
+  const mutationError = inviteMutation.error ?? invitationActionMutation.error;
+
+  return (
+    <div className="tool-panel">
+      <div className="panel-heading">
+        <h2>Team</h2>
+        <UserPlus aria-hidden="true" size={18} />
+      </div>
+      {!canManage ? <EmptyState title="Owner or admin access required" /> : null}
+      {membersQuery.isLoading ? <LoadingState title="Loading team" /> : null}
+      {mutationError ? (
+        <ErrorState detail={getApiErrorMessage(mutationError)} title="Team action failed" />
+      ) : null}
+      {inviteMutation.isSuccess ? <SuccessState title="Invitation sent" /> : null}
+      {canManage ? (
+        <>
+          <form className="inline-form" onSubmit={handleInvite}>
+            <input
+              aria-label="Invite email"
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="member@example.com"
+              required
+              type="email"
+              value={email}
+            />
+            <select
+              aria-label="Invite role"
+              onChange={(event) => setRole(event.target.value)}
+              value={role}
+            >
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button
+              className="secondary-button"
+              disabled={!organizationId || inviteMutation.isPending}
+              type="submit"
+            >
+              <UserPlus aria-hidden="true" size={17} />
+              Invite
+            </button>
+          </form>
+          <div className="compact-list">
+            {(membersQuery.data ?? []).map((membership) => (
+              <div className="compact-row" key={membership.id}>
+                <div>
+                  <strong>{membership.user?.name || membership.user?.email || membership.invited_email}</strong>
+                  <span>{membership.role}</span>
+                </div>
+                <div className="row-actions">
+                  <StatusBadge value={membership.status} />
+                  {membership.status === "invited" ? (
+                    <>
+                      <button
+                        aria-label={`Resend invitation to ${membership.invited_email}`}
+                        className="icon-button"
+                        disabled={invitationActionMutation.isPending}
+                        onClick={() =>
+                          invitationActionMutation.mutate({
+                            membershipId: membership.id,
+                            action: "resend",
+                          })
+                        }
+                        title="Resend invitation"
+                        type="button"
+                      >
+                        <RotateCcw aria-hidden="true" size={16} />
+                      </button>
+                      <button
+                        aria-label={`Cancel invitation to ${membership.invited_email}`}
+                        className="icon-button"
+                        disabled={invitationActionMutation.isPending}
+                        onClick={() =>
+                          invitationActionMutation.mutate({
+                            membershipId: membership.id,
+                            action: "cancel",
+                          })
+                        }
+                        title="Cancel invitation"
+                        type="button"
+                      >
+                        <X aria-hidden="true" size={16} />
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+          {!membersQuery.isLoading && !membersQuery.data?.length ? (
+            <EmptyState title="No team members" />
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { accessToken } = useAuth();
   const { selectedOrganization } = useWorkspace();
@@ -309,6 +462,13 @@ export function SettingsPage() {
           accessToken={accessToken}
           canEditWorkspace={canEditWorkspace}
           key={selectedOrganization?.id ?? "no-organization"}
+          selectedOrganization={selectedOrganization}
+        />
+
+        <TeamPanel
+          accessToken={accessToken}
+          canManage={canEditWorkspace}
+          key={`team-${selectedOrganization?.id ?? "none"}`}
           selectedOrganization={selectedOrganization}
         />
 

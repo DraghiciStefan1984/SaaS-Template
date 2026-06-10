@@ -40,6 +40,15 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Verify Email" })).toBeInTheDocument();
   });
 
+  it("renders the organization invitation acceptance screen", () => {
+    sessionStorage.clear();
+    window.history.pushState({}, "", "/accept-invitation?token=test-token");
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "Accept Invitation" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign In to Accept" })).toBeInTheDocument();
+  });
+
   it("does not retain access tokens in browser storage", async () => {
     sessionStorage.setItem("saas_core_access_token", "legacy-access-token");
     render(<App />);

@@ -1,6 +1,6 @@
 import { KeyRound, LockKeyhole, UserPlus } from "lucide-react";
 import { FormEvent, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import { LoadingState, SuccessState } from "../components/StateBlock";
 import { GoogleLoginButton } from "../components/GoogleLoginButton";
@@ -11,6 +11,7 @@ type AuthMode = "login" | "register" | "recover";
 
 export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { isAuthenticated, isBootstrapping, login, loginWithGoogle, register } = useAuth();
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState("");
@@ -21,6 +22,11 @@ export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const requestedReturnTo = searchParams.get("next") ?? "";
+  const returnTo =
+    requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//")
+      ? requestedReturnTo
+      : "/dashboard";
 
   if (isBootstrapping) {
     return (
@@ -31,7 +37,7 @@ export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
   }
 
   if (isAuthenticated) {
-    return <Navigate replace to="/dashboard" />;
+    return <Navigate replace to={returnTo} />;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -45,7 +51,7 @@ export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
         setSuccess(response.detail);
       } else if (mode === "login") {
         await login(email, password);
-        navigate("/dashboard");
+        navigate(returnTo);
       } else {
         await register({
           email,
@@ -53,7 +59,7 @@ export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
           name,
           organization_name: organizationName,
         });
-        navigate("/dashboard");
+        navigate(returnTo);
       }
     } catch (caughtError) {
       setError(getApiErrorMessage(caughtError, "Authentication request failed."));
@@ -81,7 +87,7 @@ export function AuthPage({ initialMode }: { initialMode: AuthMode }) {
     setIsSubmitting(true);
     try {
       await loginWithGoogle(credential);
-      navigate("/dashboard");
+      navigate(returnTo);
     } catch (caughtError) {
       setError(getApiErrorMessage(caughtError, "Google login failed."));
     } finally {

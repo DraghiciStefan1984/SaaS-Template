@@ -122,6 +122,7 @@ class ${pascal}Request(models.Model):
     {
       path: join(productDir, "services.py"),
       content: `from django.db import transaction
+from rest_framework.exceptions import ValidationError
 
 from apps.billing.services import assert_feature_enabled
 from apps.usage.services import check_and_record_usage
@@ -135,12 +136,18 @@ ${snake.toUpperCase()}_USAGE_METRIC = "${snake}_requests"
 
 @transaction.atomic
 def create_${snake}_request(*, organization, created_by, title, input_payload=None):
-    input_payload = input_payload or {}
+    input_payload = {} if input_payload is None else input_payload
+    if not isinstance(input_payload, dict):
+        raise ValidationError({"input_payload": "Expected a JSON object."})
     # TODO(product): Decide first whether this product can be solved with
     # deterministic code, classic ML/DL, or a low-cost model before adding any
     # external AI provider call.
     # TODO(api-key): Route future provider calls through a dedicated service
     # module and configure keys through environment secrets only.
+    # TODO(report): Use apps.reports.services.create_report_request when this
+    # product needs queued artifact generation.
+    # TODO(notification): Use apps.notifications.services.send_notification for
+    # user-facing delivery instead of calling providers directly.
     # TODO(billing): Add this product feature flag and usage metric to plan seed
     # migrations before exposing the endpoint outside local development.
     # TODO(privacy): Add product records to privacy export and anonymization
@@ -168,7 +175,7 @@ def create_${snake}_request(*, organization, created_by, title, input_payload=No
       path: join(productDir, "serializers.py"),
       content: `from rest_framework import serializers
 
-from apps.common.serializers import validate_json_payload_size
+from apps.common.serializers import validate_json_object
 
 from .models import ${pascal}Request
 from .services import create_${snake}_request
@@ -210,7 +217,7 @@ class ${pascal}RequestSummarySerializer(serializers.ModelSerializer):
 class ${pascal}CreateSerializer(serializers.Serializer):
     organization_id = serializers.IntegerField()
     title = serializers.CharField(max_length=240)
-    input_payload = serializers.JSONField(required=False, validators=[validate_json_payload_size])
+    input_payload = serializers.JSONField(required=False, validators=[validate_json_object])
 
     def create(self, validated_data):
         return create_${snake}_request(

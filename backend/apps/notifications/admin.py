@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import NotificationDeliveryLog, NotificationPreference
+from .models import InAppNotification, NotificationDeliveryLog, NotificationPreference
+
+
+@admin.register(InAppNotification)
+class InAppNotificationAdmin(admin.ModelAdmin):
+    list_display = ("organization", "user", "event", "title", "is_read", "created_at")
+    list_filter = ("event", "is_read", "created_at")
+    search_fields = ("organization__name", "user__email", "title", "message")
+    autocomplete_fields = ("organization", "user")
 
 
 @admin.register(NotificationPreference)
@@ -17,4 +25,3 @@ class NotificationDeliveryLogAdmin(admin.ModelAdmin):
     list_filter = ("event", "channel", "status", "provider", "created_at")
     search_fields = ("organization__name", "user__email", "recipient", "subject", "error_message")
     autocomplete_fields = ("organization", "user")
-

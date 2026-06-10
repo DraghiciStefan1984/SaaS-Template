@@ -121,6 +121,9 @@ npm run api:types:check
 - `GET/PATCH/DELETE /api/v1/organizations/{id}/`
 - `GET /api/v1/organizations/{id}/members/`
 - `POST /api/v1/organizations/{id}/invite-member/`
+- `POST /api/v1/organizations/{id}/invitations/{membership_id}/resend/`
+- `POST /api/v1/organizations/{id}/invitations/{membership_id}/cancel/`
+- `POST /api/v1/organizations/invitations/accept/`
 - `GET /api/v1/billing/plans/`
 - `GET /api/v1/billing/subscription/?organization_id=...`
 - `GET /api/v1/billing/entitlements/?organization_id=...`
@@ -154,6 +157,9 @@ npm run api:types:check
 - `GET /api/v1/reports/{id}/artifacts/{artifact_id}/download/`
 - `GET/POST /api/v1/notifications/preferences/`
 - `GET /api/v1/notifications/delivery-logs/?organization_id=...`
+- `GET /api/v1/notifications/in-app/?organization_id=...`
+- `POST /api/v1/notifications/in-app/{id}/read/`
+- `POST /api/v1/notifications/in-app/read-all/`
 - `GET/POST /api/v1/privacy/exports/`
 - `GET/POST /api/v1/privacy/deletion-requests/`
 - `POST /api/v1/privacy/deletion-requests/{id}/execute/`

@@ -16,6 +16,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { ExampleProductPage } from "./pages/ExampleProductPage";
 import { EmailVerificationPage } from "./pages/EmailVerificationPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
+import { InvitationAcceptPage } from "./pages/InvitationAcceptPage";
 import { LandingPage } from "./pages/LandingPage";
 import { LegalPage } from "./pages/LegalPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -96,6 +97,7 @@ function AppRoutes() {
       <Route element={<AuthPage initialMode="recover" />} path="/recover-password" />
       <Route element={<PasswordResetPage />} path="/reset-password" />
       <Route element={<EmailVerificationPage />} path="/verify-email" />
+      <Route element={<InvitationAcceptPage />} path="/accept-invitation" />
       <Route element={<ProtectedWorkspace />} path="/dashboard">
         <Route element={<DashboardPage />} index />
         <Route element={<ExampleProductPage />} path="product" />

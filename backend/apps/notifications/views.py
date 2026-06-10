@@ -1,8 +1,10 @@
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import generics, status
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.audit.services import log_audit_event
 from apps.organizations.models import MembershipStatus, Organization
@@ -12,8 +14,11 @@ from apps.organizations.permissions import (
     require_organization_role,
 )
 
-from .models import NotificationDeliveryLog, NotificationPreference
+from .models import InAppNotification, NotificationDeliveryLog, NotificationPreference
 from .serializers import (
+    InAppNotificationReadAllResponseSerializer,
+    InAppNotificationReadAllSerializer,
+    InAppNotificationSerializer,
     NotificationDeliveryLogSerializer,
     NotificationPreferenceSerializer,
     NotificationPreferenceUpsertSerializer,
@@ -142,3 +147,68 @@ class NotificationDeliveryLogListView(generics.ListAPIView):
         return NotificationDeliveryLog.objects.filter(organization=organization).select_related(
             "user"
         )
+
+
+class InAppNotificationListView(generics.ListAPIView):
+    queryset = InAppNotification.objects.none()
+    serializer_class = InAppNotificationSerializer
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="organization_id",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                required=True,
+            )
+        ]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return InAppNotification.objects.none()
+        organization = get_member_organization(
+            self.request.user,
+            self.request.query_params.get("organization_id"),
+        )
+        return InAppNotification.objects.filter(
+            organization=organization,
+            user=self.request.user,
+        )
+
+
+class InAppNotificationReadView(APIView):
+    @extend_schema(request=None, responses=InAppNotificationSerializer)
+    def post(self, request, pk):
+        notification = get_object_or_404(
+            InAppNotification.objects.filter(
+                id=pk,
+                user=request.user,
+                organization__memberships__user=request.user,
+                organization__memberships__status=MembershipStatus.ACTIVE,
+            ).distinct()
+        )
+        notification.mark_read()
+        return Response(InAppNotificationSerializer(notification).data)
+
+
+class InAppNotificationReadAllView(APIView):
+    @extend_schema(
+        request=InAppNotificationReadAllSerializer,
+        responses=InAppNotificationReadAllResponseSerializer,
+    )
+    def post(self, request):
+        serializer = InAppNotificationReadAllSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        organization = get_member_organization(
+            request.user,
+            serializer.validated_data["organization_id"],
+        )
+        updated = InAppNotification.objects.filter(
+            organization=organization,
+            user=request.user,
+            is_read=False,
+        ).update(is_read=True, read_at=timezone.now())
+        return Response({"updated": updated})

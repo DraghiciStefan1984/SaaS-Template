@@ -4,6 +4,7 @@ from rest_framework.test import APIClient
 
 from apps.audit.models import AuditLog
 from apps.jobs.models import ScheduledWorkflow
+from apps.notifications.models import InAppNotification, NotificationEvent
 from apps.organizations.models import Membership, MembershipRole, MembershipStatus
 from apps.organizations.services import create_organization_for_owner
 from apps.privacy.models import DataDeletionRequest, DataExportRequest, PrivacyRequestStatus
@@ -129,6 +130,35 @@ def test_data_export_payload_includes_scheduled_workflows(django_user_model):
     assert workflow["config"] == {"private": "schedule config"}
 
 
+def test_organization_export_includes_in_app_notifications(django_user_model):
+    owner = make_user(django_user_model, email="notification-export@example.com")
+    organization = create_organization_for_owner(owner, "Notification Export Workspace")
+    notification = InAppNotification.objects.create(
+        organization=organization,
+        user=owner,
+        event=NotificationEvent.SYSTEM_ALERT,
+        title="Private notification title",
+        message="Private notification body",
+        target_url="/dashboard/private",
+        metadata={"private": "metadata"},
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        "/api/v1/privacy/exports/",
+        {"organization_id": organization.id, "scope": "organization"},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    exported = response.json()["export_payload"]["in_app_notifications"][0]
+    assert exported["id"] == notification.id
+    assert exported["title"] == "Private notification title"
+    assert exported["message"] == "Private notification body"
+    assert exported["target_url"] == "/dashboard/private"
+
+
 def test_account_export_scope_returns_account_payload_for_member(django_user_model):
     owner = make_user(django_user_model, email="owner@example.com")
     member = make_user(django_user_model, email="member@example.com")
@@ -156,6 +186,44 @@ def test_account_export_scope_returns_account_payload_for_member(django_user_mod
         membership["organization"]["id"] for membership in payload["membership_records"]
     }
     assert exported_org_ids == {organization.id, other_organization.id}
+
+
+def test_account_export_includes_only_requester_in_app_notifications(django_user_model):
+    owner = make_user(django_user_model, email="account-notification-owner@example.com")
+    member = make_user(django_user_model, email="account-notification-member@example.com")
+    organization = create_organization_for_owner(owner, "Account Notification Workspace")
+    Membership.objects.create(
+        organization=organization,
+        user=member,
+        role=MembershipRole.MEMBER,
+        status=MembershipStatus.ACTIVE,
+    )
+    member_notification = InAppNotification.objects.create(
+        organization=organization,
+        user=member,
+        event=NotificationEvent.SYSTEM_ALERT,
+        title="Member notification",
+        message="Member private body",
+    )
+    InAppNotification.objects.create(
+        organization=organization,
+        user=owner,
+        event=NotificationEvent.SYSTEM_ALERT,
+        title="Owner notification",
+    )
+    client = APIClient()
+    client.force_authenticate(member)
+
+    response = client.post(
+        "/api/v1/privacy/exports/",
+        {"organization_id": organization.id, "scope": "account"},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    exported = response.json()["export_payload"]["in_app_notifications"]
+    assert [notification["id"] for notification in exported] == [member_notification.id]
+    assert exported[0]["message"] == "Member private body"
 
 
 def test_account_exports_are_visible_only_to_requester_not_org_admins(django_user_model):
@@ -234,6 +302,15 @@ def test_data_deletion_request_can_be_executed_and_anonymizes_organization(
         ai_execution_plan={"private": "plan"},
         error_message="provider error",
     )
+    notification = InAppNotification.objects.create(
+        organization=organization,
+        user=owner,
+        event=NotificationEvent.SYSTEM_ALERT,
+        title="Sensitive notification",
+        message="Sensitive message",
+        target_url="/dashboard/private",
+        metadata={"private": True},
+    )
 
     create_response = client.post(
         "/api/v1/privacy/deletion-requests/",
@@ -267,6 +344,11 @@ def test_data_deletion_request_can_be_executed_and_anonymizes_organization(
     assert insight_request.constraints == {}
     assert insight_request.ai_execution_plan == {}
     assert insight_request.error_message == ""
+    notification.refresh_from_db()
+    assert notification.title == "Deleted notification"
+    assert notification.message == ""
+    assert notification.target_url == ""
+    assert notification.metadata == {}
     export_request.refresh_from_db()
     assert export_request.export_payload == {"privacy_deleted": True}
     assert export_request.expires_at is not None
@@ -292,6 +374,15 @@ def test_account_deletion_can_be_requested_by_member_and_disables_all_membership
         requested_by=member,
         scope="account",
         export_payload={"private": "account-export"},
+    )
+    notification = InAppNotification.objects.create(
+        organization=organization,
+        user=member,
+        event=NotificationEvent.SYSTEM_ALERT,
+        title="Sensitive member notification",
+        message="Sensitive member message",
+        target_url="/dashboard/private",
+        metadata={"private": True},
     )
     client = APIClient()
     client.force_authenticate(member)
@@ -326,6 +417,11 @@ def test_account_deletion_can_be_requested_by_member_and_disables_all_membership
     assert DataExportRequest.objects.get(requested_by=member).export_payload == {
         "privacy_deleted": True
     }
+    notification.refresh_from_db()
+    assert notification.title == "Deleted notification"
+    assert notification.message == ""
+    assert notification.target_url == ""
+    assert notification.metadata == {}
 
 
 def test_owner_cannot_execute_member_account_deletion_request(django_user_model):

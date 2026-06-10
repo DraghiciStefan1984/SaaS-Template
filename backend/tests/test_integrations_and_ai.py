@@ -6,13 +6,16 @@ from rest_framework.test import APIClient
 from apps.ai.models import (
     AICallLog,
     AICallStatus,
+    AIExecutionStrategy,
     AIModelDecisionLog,
+    AIModelPolicy,
     AIProvider,
     AITaskProfile,
     PromptTemplate,
 )
 from apps.ai.services import (
     AIProviderNotConfigured,
+    normalize_allowed_strategies,
     run_ai_prompt,
     run_ai_task,
     select_ai_execution_plan,
@@ -27,7 +30,12 @@ from apps.integrations.models import (
     ProviderAuthType,
     SyncLogStatus,
 )
-from apps.integrations.services import create_sync_log, decrypt_credential_payload
+from apps.integrations.services import (
+    connect_integration_account,
+    create_sync_log,
+    decrypt_credential_payload,
+    reconnect_integration_account,
+)
 from apps.organizations.models import Membership, MembershipRole, MembershipStatus
 from apps.organizations.services import create_organization_for_owner
 
@@ -331,6 +339,60 @@ def test_member_cannot_read_integration_sync_logs(django_user_model):
     response = client.get(f"/api/v1/integrations/{account.id}/sync-logs/")
 
     assert response.status_code == 403
+
+
+def test_invalid_encrypted_integration_credential_is_rejected():
+    with pytest.raises(ValidationError, match="could not be decrypted"):
+        decrypt_credential_payload("not-a-valid-fernet-token")
+
+
+def test_disabled_provider_cannot_connect_or_reconnect(django_user_model):
+    owner = make_user(django_user_model, email="disabled-provider@example.com")
+    organization = create_organization_for_owner(owner, "Disabled Provider Workspace")
+    provider = make_api_key_provider("disabled-provider")
+    provider.is_active = False
+    provider.save(update_fields=["is_active", "updated_at"])
+    account = organization.integration_accounts.create(
+        provider=provider,
+        display_name="Disabled Account",
+        connected_by=owner,
+        status=IntegrationAccountStatus.DISCONNECTED,
+    )
+
+    with pytest.raises(ValidationError, match="provider is disabled"):
+        connect_integration_account(
+            organization=organization,
+            provider=provider,
+            connected_by=owner,
+            credential_payload={"api_key": "secret"},
+        )
+    with pytest.raises(ValidationError, match="provider is disabled"):
+        reconnect_integration_account(
+            account,
+            connected_by=owner,
+            credential_payload={"api_key": "secret"},
+        )
+
+
+def test_api_key_provider_requires_credential_for_connect_and_reconnect(django_user_model):
+    owner = make_user(django_user_model, email="missing-key@example.com")
+    organization = create_organization_for_owner(owner, "Missing Key Workspace")
+    provider = make_api_key_provider("missing-key-provider")
+    account = organization.integration_accounts.create(
+        provider=provider,
+        display_name="Missing Key Account",
+        connected_by=owner,
+        status=IntegrationAccountStatus.DISCONNECTED,
+    )
+
+    with pytest.raises(ValidationError, match="require a credential payload"):
+        connect_integration_account(
+            organization=organization,
+            provider=provider,
+            connected_by=owner,
+        )
+    with pytest.raises(ValidationError, match="require a credential payload"):
+        reconnect_integration_account(account, connected_by=owner)
 
 
 def test_default_ai_providers_expose_only_public_metadata(django_user_model):
@@ -667,6 +729,113 @@ def test_high_risk_execution_plan_requires_human_review(django_user_model):
     assert execution_plan["provider_slug"] == ""
 
 
+def test_trusted_ai_constraints_can_force_allowed_strategy_and_reject_disallowed_strategy(
+    django_user_model,
+):
+    owner = make_user(django_user_model, email="forced-strategy@example.com")
+    organization = create_organization_for_owner(owner, "Forced Strategy Workspace")
+
+    execution_plan = select_ai_execution_plan(
+        organization=organization,
+        user=owner,
+        task_key="table_analysis",
+        constraints={"force_strategy": AIExecutionStrategy.LOCAL_MODEL},
+        trusted_constraints=True,
+    )
+
+    assert execution_plan["strategy"] == AIExecutionStrategy.LOCAL_MODEL
+    assert execution_plan["reason"] == "Forced by request constraints."
+
+    with pytest.raises(ValidationError, match="Forced strategy is not allowed"):
+        select_ai_execution_plan(
+            organization=organization,
+            user=owner,
+            task_key="table_analysis",
+            constraints={
+                "force_strategy": AIExecutionStrategy.HUMAN_REVIEW,
+                "allowed_strategies": [AIExecutionStrategy.DETERMINISTIC],
+            },
+            trusted_constraints=True,
+        )
+
+
+def test_ai_execution_plan_uses_local_model_and_cost_sensitive_fallbacks(django_user_model):
+    owner = make_user(django_user_model, email="local-model@example.com")
+    organization = create_organization_for_owner(owner, "Local Model Workspace")
+
+    local_plan = select_ai_execution_plan(
+        organization=organization,
+        user=owner,
+        task_key="table_analysis",
+        constraints={"can_use_local_model": True},
+    )
+    cost_sensitive_plan = select_ai_execution_plan(
+        organization=organization,
+        user=owner,
+        task_key="recurring_ai_report",
+        constraints={"cost_sensitivity": "high"},
+    )
+
+    assert local_plan["strategy"] == AIExecutionStrategy.LOCAL_MODEL
+    assert local_plan["configuration"]["status"] == "not_required"
+    assert cost_sensitive_plan["strategy"] == AIExecutionStrategy.LOW_COST_LLM
+    assert cost_sensitive_plan["reason"] == "High-volume/cost-sensitive task."
+
+
+def test_ai_plan_specific_policy_overrides_generic_policy(django_user_model):
+    owner = make_user(django_user_model, email="policy@example.com")
+    organization = create_organization_for_owner(owner, "Policy Workspace")
+    organization.subscription.plan = organization.subscription.plan.__class__.objects.get(
+        slug="pro"
+    )
+    organization.subscription.status = "active"
+    organization.subscription.save(update_fields=["plan", "status", "updated_at"])
+    profile = AITaskProfile.objects.get(key="recurring_ai_report")
+    provider = AIProvider.objects.get(slug="openai")
+    generic = AIModelPolicy.objects.create(
+        task_profile=profile,
+        name="Generic recurring policy",
+        strategy=AIExecutionStrategy.LOW_COST_LLM,
+        provider=provider,
+        model_name="generic-model",
+        priority=1,
+    )
+    plan_specific = AIModelPolicy.objects.create(
+        task_profile=profile,
+        name="Pro recurring policy",
+        strategy=AIExecutionStrategy.LOW_COST_LLM,
+        provider=provider,
+        model_name="pro-model",
+        plan_slug="pro",
+        priority=100,
+    )
+
+    execution_plan = select_ai_execution_plan(
+        organization=organization,
+        user=owner,
+        task_key=profile.key,
+    )
+
+    assert execution_plan["policy_id"] == plan_specific.id
+    assert execution_plan["policy_id"] != generic.id
+    assert execution_plan["model"] == "pro-model"
+
+
+def test_ai_allowed_strategy_validation_rejects_invalid_and_empty_configuration():
+    profile = AITaskProfile.objects.get(key="table_analysis")
+    profile.allowed_strategies = ["unsupported"]
+
+    with pytest.raises(ValidationError, match="Unsupported AI execution strategy"):
+        normalize_allowed_strategies(profile)
+
+    profile.allowed_strategies = [AIExecutionStrategy.DETERMINISTIC]
+    with pytest.raises(ValidationError, match="No valid AI strategies"):
+        normalize_allowed_strategies(
+            profile,
+            {"allowed_strategies": [AIExecutionStrategy.LOW_COST_LLM]},
+        )
+
+
 def test_run_ai_task_returns_product_executor_instruction_for_non_llm_strategy(django_user_model):
     owner = make_user(django_user_model, email="owner@example.com")
     organization = create_organization_for_owner(owner, "Owner Workspace")
@@ -689,6 +858,37 @@ def test_run_ai_task_returns_product_executor_instruction_for_non_llm_strategy(d
     assert result["status"] == "selected"
     assert result["execution_plan"]["strategy"] == "deterministic"
     assert "product-specific" in result["detail"]
+
+
+def test_run_ai_task_rejects_llm_execution_without_active_provider(django_user_model):
+    owner = make_user(django_user_model, email="no-provider@example.com")
+    organization = create_organization_for_owner(owner, "No Provider Workspace")
+    AIProvider.objects.update(is_active=False)
+
+    with pytest.raises(AIProviderNotConfigured, match="No active LLM provider"):
+        run_ai_task(
+            organization=organization,
+            user=owner,
+            task_key="recurring_ai_report",
+            prompt_key="missing-prompt",
+            input_payload={"facts": {"revenue": 1000}},
+        )
+
+
+def test_run_ai_prompt_rejects_missing_prompt_without_creating_call_log(django_user_model):
+    owner = make_user(django_user_model, email="missing-prompt@example.com")
+    organization = create_organization_for_owner(owner, "Missing Prompt Workspace")
+
+    with pytest.raises(ValidationError, match="No active prompt template"):
+        run_ai_prompt(
+            organization=organization,
+            user=owner,
+            provider_slug="openai",
+            prompt_key="missing-prompt",
+            input_payload={"facts": {"revenue": 1000}},
+        )
+
+    assert not AICallLog.objects.filter(organization=organization).exists()
 
 
 def test_ai_decision_logs_are_organization_scoped(django_user_model):

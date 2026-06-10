@@ -7,6 +7,8 @@
     "backend:migrate": "node scripts/backend-command.mjs manage.py migrate",
     "backend:migrations:check": "node scripts/backend-command.mjs manage.py makemigrations --check --dry-run",
     "backend:test": "node scripts/backend-command.mjs -m pytest",
+    "backend:test:postgres-concurrency": "node scripts/backend-command.mjs -m pytest --create-db tests/test_billing_and_usage.py::test_concurrent_usage_reservations_cannot_exceed_limit_on_postgresql",
+    "backend:coverage": "node scripts/backend-command.mjs -m pytest --cov=apps --cov-branch --cov-fail-under=90",
     "backend:lint": "node scripts/backend-command.mjs -m ruff check .",
     "api:types": "node scripts/backend-command.mjs manage.py spectacular --validate --format openapi-json --file openapi.json && node scripts/generate-api-types.mjs",
     "api:types:check": "node scripts/backend-command.mjs manage.py spectacular --validate --format openapi-json --file openapi.json && node scripts/generate-api-types.mjs --check",
@@ -36,6 +38,7 @@
     "frontend:lint": "npm --prefix frontend run lint",
     "frontend:typecheck": "npm --prefix frontend run typecheck",
     "frontend:test": "npm --prefix frontend run test",
+    "frontend:coverage": "npm --prefix frontend run test:coverage",
     "frontend:build": "npm --prefix frontend run build",
     "check": "npm run backend:lint && npm run backend:check && npm run backend:migrations:check && npm run backend:test && npm run frontend:lint && npm run frontend:typecheck && npm run frontend:test && npm run frontend:build"
   }

@@ -1,6 +1,7 @@
-import { Mail, Save } from "lucide-react";
+import { Check, CheckCheck, Mail, Save } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorState, LoadingState, SuccessState } from "../components/StateBlock";
@@ -30,9 +31,15 @@ export function NotificationsPage() {
     queryKey: ["notification-delivery-logs", organizationId],
     queryFn: () => api.notificationDeliveryLogs(accessToken, organizationId!),
   });
+  const inAppNotificationsQuery = useQuery({
+    enabled: Boolean(accessToken && organizationId),
+    queryKey: ["in-app-notifications", organizationId],
+    queryFn: () => api.inAppNotifications(accessToken, organizationId!),
+  });
 
   const preferences = listResults(preferencesQuery.data);
   const deliveryLogs = listResults(deliveryLogsQuery.data);
+  const inAppNotifications = listResults(inAppNotificationsQuery.data);
 
   const savePreferenceMutation = useMutation({
     mutationFn: () =>
@@ -45,6 +52,19 @@ export function NotificationsPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notification-preferences", organizationId] });
+    },
+  });
+  const markReadMutation = useMutation({
+    mutationFn: (notificationId: number) =>
+      api.markInAppNotificationRead(accessToken, notificationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["in-app-notifications", organizationId] });
+    },
+  });
+  const markAllReadMutation = useMutation({
+    mutationFn: () => api.markAllInAppNotificationsRead(accessToken, organizationId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["in-app-notifications", organizationId] });
     },
   });
 
@@ -95,10 +115,14 @@ export function NotificationsPage() {
         </form>
       </PageHeader>
 
-      {preferencesQuery.isLoading || (canViewDeliveryLogs && deliveryLogsQuery.isLoading) ? (
+      {preferencesQuery.isLoading ||
+      inAppNotificationsQuery.isLoading ||
+      (canViewDeliveryLogs && deliveryLogsQuery.isLoading) ? (
         <LoadingState title="Loading notifications" />
       ) : null}
-      {preferencesQuery.isError || (canViewDeliveryLogs && deliveryLogsQuery.isError) ? (
+      {preferencesQuery.isError ||
+      inAppNotificationsQuery.isError ||
+      (canViewDeliveryLogs && deliveryLogsQuery.isError) ? (
         <ErrorState title="Notifications unavailable" />
       ) : null}
       {savePreferenceMutation.isError ? (
@@ -110,6 +134,53 @@ export function NotificationsPage() {
       {savePreferenceMutation.isSuccess ? (
         <SuccessState title="Notification preference saved" />
       ) : null}
+
+      <section className="tool-panel">
+        <div className="panel-heading">
+          <h2>Notification Center</h2>
+          <button
+            className="secondary-button panel-action"
+            disabled={
+              !inAppNotifications.some((notification) => !notification.is_read) ||
+              markAllReadMutation.isPending
+            }
+            onClick={() => markAllReadMutation.mutate()}
+            type="button"
+          >
+            <CheckCheck aria-hidden="true" size={17} />
+            Mark all read
+          </button>
+        </div>
+        {inAppNotifications.length ? (
+          <div className="compact-list">
+            {inAppNotifications.map((notification) => (
+              <div className="compact-row" key={notification.id}>
+                <div>
+                  <strong>{notification.title}</strong>
+                  <span>{notification.message || formatDate(notification.created_at)}</span>
+                  {notification.target_url ? <Link to={notification.target_url}>Open</Link> : null}
+                </div>
+                {notification.is_read ? (
+                  <StatusBadge value="read" />
+                ) : (
+                  <button
+                    aria-label={`Mark ${notification.title} read`}
+                    className="secondary-button panel-action"
+                    disabled={markReadMutation.isPending}
+                    onClick={() => markReadMutation.mutate(notification.id)}
+                    type="button"
+                  >
+                    <Check aria-hidden="true" size={17} />
+                    Read
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="No in-app notifications" />
+        )}
+      </section>
 
       <section className="split-grid">
         <div className="tool-panel">

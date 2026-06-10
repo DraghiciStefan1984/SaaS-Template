@@ -2,11 +2,17 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.conf import settings
-from django.core import mail
+from django.core import mail, signing
 from django.test import override_settings
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.test import APIClient
 
 from apps.accounts.models import UserAccountStatus
+from apps.accounts.services import (
+    InvalidGoogleIdentity,
+    get_or_create_google_user,
+    verify_google_identity_token,
+)
 from apps.audit.models import AuditLog
 from apps.organizations.models import Membership, MembershipRole, MembershipStatus, Organization
 from apps.organizations.services import create_organization_for_owner
@@ -185,6 +191,83 @@ def test_google_login_returns_not_configured_without_client_id():
     )
 
     assert response.status_code == 503
+
+
+@override_settings(GOOGLE_OAUTH_CLIENT_ID="test-google-client-id")
+def test_google_identity_verification_requires_nonce_before_provider_call(monkeypatch):
+    provider_call = lambda *_args, **_kwargs: pytest.fail("Provider must not be called")  # noqa: E731
+    monkeypatch.setattr("google.oauth2.id_token.verify_oauth2_token", provider_call)
+
+    with pytest.raises(InvalidGoogleIdentity, match="missing or expired"):
+        verify_google_identity_token("provider-token", "")
+
+
+@override_settings(GOOGLE_OAUTH_CLIENT_ID="test-google-client-id")
+@pytest.mark.parametrize(
+    ("claims", "expected_message"),
+    [
+        (
+            {
+                "iss": "https://untrusted.example",
+                "email": "user@example.com",
+                "email_verified": True,
+                "nonce": "expected-nonce",
+            },
+            "Google identity could not be verified",
+        ),
+        (
+            {
+                "iss": "https://accounts.google.com",
+                "email": "user@example.com",
+                "email_verified": False,
+                "nonce": "expected-nonce",
+            },
+            "email is not verified",
+        ),
+        (
+            {
+                "iss": "https://accounts.google.com",
+                "email": "user@example.com",
+                "email_verified": True,
+                "nonce": "wrong-nonce",
+            },
+            "missing or expired",
+        ),
+    ],
+)
+def test_google_identity_verification_rejects_untrusted_claims(
+    monkeypatch,
+    claims,
+    expected_message,
+):
+    monkeypatch.setattr(
+        "google.oauth2.id_token.verify_oauth2_token",
+        lambda *_args, **_kwargs: claims,
+    )
+
+    with pytest.raises(InvalidGoogleIdentity, match=expected_message):
+        verify_google_identity_token("provider-token", "expected-nonce")
+
+
+def test_google_identity_cannot_reactivate_suspended_existing_user(django_user_model):
+    user = make_user(
+        django_user_model,
+        email="suspended-google@example.com",
+        account_status=UserAccountStatus.SUSPENDED,
+    )
+
+    with pytest.raises(AuthenticationFailed, match="not active"):
+        get_or_create_google_user(
+            {
+                "email": user.email,
+                "email_verified": True,
+                "name": "Suspended User",
+            }
+        )
+
+    user.refresh_from_db()
+    assert user.account_status == UserAccountStatus.SUSPENDED
+    assert not user.organization_memberships.exists()
 
 
 def test_login_returns_tokens_and_user(django_user_model):
@@ -552,7 +635,7 @@ def test_owner_delete_anonymizes_organization_without_hard_delete(django_user_mo
     assert audit_log.metadata["deletion_request_id"] == deletion_request.id
 
 
-def test_invite_member_creates_pending_invitation_without_sending_email(django_user_model):
+def test_invite_member_creates_pending_invitation_and_sends_email(django_user_model):
     owner = make_user(django_user_model, email="owner@example.com")
     organization = create_organization_for_owner(owner, "Team Workspace")
     client = APIClient()
@@ -571,3 +654,243 @@ def test_invite_member_creates_pending_invitation_without_sending_email(django_u
     )
     assert invitation.user is None
     assert invitation.status == MembershipStatus.INVITED
+    assert len(mail.outbox) == 1
+    assert "/accept-invitation?token=" in mail.outbox[0].body
+    assert AuditLog.objects.filter(
+        action="organizations.invitation.sent",
+        organization=organization,
+    ).exists()
+
+
+def test_invited_user_can_accept_membership_invitation(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    invited_user = make_user(django_user_model, email="new.member@example.com")
+    organization = create_organization_for_owner(owner, "Team Workspace")
+    owner_client = APIClient()
+    owner_client.force_authenticate(user=owner)
+    invite_response = owner_client.post(
+        f"/api/v1/organizations/{organization.id}/invite-member/",
+        {"email": invited_user.email, "role": MembershipRole.MEMBER},
+        format="json",
+    )
+    invitation_url = mail.outbox[0].body.splitlines()[-1]
+    token = parse_qs(urlparse(invitation_url).query)["token"][0]
+    invited_client = APIClient()
+    invited_client.force_authenticate(user=invited_user)
+
+    response = invited_client.post(
+        "/api/v1/organizations/invitations/accept/",
+        {"token": token},
+        format="json",
+    )
+
+    assert invite_response.status_code == 201
+    assert response.status_code == 200
+    membership = Membership.objects.get(id=response.json()["id"])
+    assert membership.user == invited_user
+    assert membership.status == MembershipStatus.ACTIVE
+    assert membership.invited_email == ""
+    assert AuditLog.objects.filter(
+        action="organizations.invitation.accepted",
+        organization=organization,
+        user=invited_user,
+    ).exists()
+
+
+def test_invitation_rejects_user_with_different_email(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    other_user = make_user(django_user_model, email="other@example.com")
+    organization = create_organization_for_owner(owner, "Team Workspace")
+    owner_client = APIClient()
+    owner_client.force_authenticate(user=owner)
+    owner_client.post(
+        f"/api/v1/organizations/{organization.id}/invite-member/",
+        {"email": "invited@example.com", "role": MembershipRole.MEMBER},
+        format="json",
+    )
+    invitation_url = mail.outbox[0].body.splitlines()[-1]
+    token = parse_qs(urlparse(invitation_url).query)["token"][0]
+    client = APIClient()
+    client.force_authenticate(user=other_user)
+
+    response = client.post(
+        "/api/v1/organizations/invitations/accept/",
+        {"token": token},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert Membership.objects.get(organization=organization, invited_email="invited@example.com")
+
+
+def test_admin_can_resend_and_cancel_pending_invitation(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Team Workspace")
+    client = APIClient()
+    client.force_authenticate(user=owner)
+    invite_response = client.post(
+        f"/api/v1/organizations/{organization.id}/invite-member/",
+        {"email": "invited@example.com", "role": MembershipRole.MEMBER},
+        format="json",
+    )
+    membership_id = invite_response.json()["id"]
+
+    resend_response = client.post(
+        f"/api/v1/organizations/{organization.id}/invitations/{membership_id}/resend/",
+        {},
+        format="json",
+    )
+    cancel_response = client.post(
+        f"/api/v1/organizations/{organization.id}/invitations/{membership_id}/cancel/",
+        {},
+        format="json",
+    )
+
+    assert resend_response.status_code == 200
+    assert cancel_response.status_code == 200
+    assert len(mail.outbox) == 2
+    assert Membership.objects.get(id=membership_id).status == MembershipStatus.DISABLED
+    assert AuditLog.objects.filter(action="organizations.invitation.resent").exists()
+    assert AuditLog.objects.filter(action="organizations.invitation.cancelled").exists()
+
+
+def test_member_cannot_manage_organization_invitations(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    member = make_user(django_user_model, email="member@example.com")
+    organization = create_organization_for_owner(owner, "Team Workspace")
+    Membership.objects.create(
+        organization=organization,
+        user=member,
+        role=MembershipRole.MEMBER,
+        status=MembershipStatus.ACTIVE,
+    )
+    owner_client = APIClient()
+    owner_client.force_authenticate(user=owner)
+    invitation_id = owner_client.post(
+        f"/api/v1/organizations/{organization.id}/invite-member/",
+        {"email": "invited@example.com", "role": MembershipRole.MEMBER},
+        format="json",
+    ).json()["id"]
+    client = APIClient()
+    client.force_authenticate(user=member)
+
+    invite_response = client.post(
+        f"/api/v1/organizations/{organization.id}/invite-member/",
+        {"email": "second@example.com", "role": MembershipRole.MEMBER},
+        format="json",
+    )
+    resend_response = client.post(
+        f"/api/v1/organizations/{organization.id}/invitations/{invitation_id}/resend/",
+        {},
+        format="json",
+    )
+    cancel_response = client.post(
+        f"/api/v1/organizations/{organization.id}/invitations/{invitation_id}/cancel/",
+        {},
+        format="json",
+    )
+
+    assert invite_response.status_code == 403
+    assert resend_response.status_code == 403
+    assert cancel_response.status_code == 403
+
+
+def test_invitation_rejects_invalid_and_reused_tokens(django_user_model):
+    owner = make_user(django_user_model, email="invite-owner@example.com")
+    invited_user = make_user(django_user_model, email="invitee@example.com")
+    organization = create_organization_for_owner(owner, "Invite Workspace")
+    owner_client = APIClient()
+    owner_client.force_authenticate(owner)
+    owner_client.post(
+        f"/api/v1/organizations/{organization.id}/invite-member/",
+        {"email": invited_user.email, "role": MembershipRole.MEMBER},
+        format="json",
+    )
+    invitation_url = mail.outbox[0].body.splitlines()[-1]
+    token = parse_qs(urlparse(invitation_url).query)["token"][0]
+    invited_client = APIClient()
+    invited_client.force_authenticate(invited_user)
+
+    invalid_response = invited_client.post(
+        "/api/v1/organizations/invitations/accept/",
+        {"token": f"{token}tampered"},
+        format="json",
+    )
+    first_response = invited_client.post(
+        "/api/v1/organizations/invitations/accept/",
+        {"token": token},
+        format="json",
+    )
+    reused_response = invited_client.post(
+        "/api/v1/organizations/invitations/accept/",
+        {"token": token},
+        format="json",
+    )
+
+    assert invalid_response.status_code == 400
+    assert first_response.status_code == 200
+    assert reused_response.status_code == 400
+    assert (
+        organization.memberships.filter(
+            user=invited_user,
+            status=MembershipStatus.ACTIVE,
+        ).count()
+        == 1
+    )
+
+
+def test_invitation_rejects_token_with_mismatched_signed_email(django_user_model):
+    owner = make_user(django_user_model, email="signed-owner@example.com")
+    invited_user = make_user(django_user_model, email="signed-invitee@example.com")
+    organization = create_organization_for_owner(owner, "Signed Invite Workspace")
+    owner_client = APIClient()
+    owner_client.force_authenticate(owner)
+    response = owner_client.post(
+        f"/api/v1/organizations/{organization.id}/invite-member/",
+        {"email": invited_user.email, "role": MembershipRole.MEMBER},
+        format="json",
+    )
+    token = signing.dumps(
+        {
+            "membership_id": response.json()["id"],
+            "email": "different@example.com",
+        },
+        salt="organizations.membership-invitation",
+        compress=True,
+    )
+    invited_client = APIClient()
+    invited_client.force_authenticate(invited_user)
+
+    accept_response = invited_client.post(
+        "/api/v1/organizations/invitations/accept/",
+        {"token": token},
+        format="json",
+    )
+
+    assert accept_response.status_code == 400
+    membership = Membership.objects.get(id=response.json()["id"])
+    assert membership.status == MembershipStatus.INVITED
+    assert membership.user is None
+
+
+def test_inviting_existing_organization_member_is_rejected(django_user_model):
+    owner = make_user(django_user_model, email="existing-owner@example.com")
+    member = make_user(django_user_model, email="existing-member@example.com")
+    organization = create_organization_for_owner(owner, "Existing Member Workspace")
+    Membership.objects.create(
+        organization=organization,
+        user=member,
+        role=MembershipRole.MEMBER,
+        status=MembershipStatus.ACTIVE,
+    )
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    response = client.post(
+        f"/api/v1/organizations/{organization.id}/invite-member/",
+        {"email": member.email, "role": MembershipRole.ADMIN},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert organization.memberships.filter(user=member).count() == 1

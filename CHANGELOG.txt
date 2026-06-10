@@ -1458,3 +1458,106 @@ External/not configured:
   `GOOGLE_OAUTH_CLIENT_ID`.
 - Stripe, AWS resources, Sentry DSN, and product-specific provider accounts/keys
   remain intentionally unconfigured.
+
+
+2026-06-10 - Reusable Collaboration, Reports, and Notification Center
+---------------------------------------------------------------------
+Changed:
+- Completed the organization invitation lifecycle with signed expiring links,
+  Django email-backend delivery, owner/admin resend and cancel actions, matching
+  email acceptance, audit events, a public acceptance page, and a dashboard team
+  management panel.
+- Added generic database artifact rendering for JSON, CSV, HTML, PDF, and DOCX
+  downloads while keeping structured report content canonical and S3 delivery
+  behind the existing storage boundary.
+- Added user-scoped in-app notifications with read/read-all state, frontend
+  notification center, report-ready delivery, admin registration, and privacy
+  export/anonymization coverage.
+- Strengthened the product scaffold with dict-only JSON validation and explicit
+  report/notification extension points.
+- Regenerated frontend OpenAPI route types and updated existing API, reporting,
+  testing, productization, external-account, README, and environment docs.
+
+Verification:
+- Focused auth/organization suite passed: 30 tests.
+- Focused reports/jobs/notifications/privacy suite passed: 40 tests.
+- Backend lint, Django check, and migration drift check passed.
+- Frontend lint, typecheck, tests (8), and production build passed.
+- Product scaffold dry-run, productization check, and OpenAPI route type drift
+  check passed.
+- `npm.cmd run release:check` passed, including 151 backend tests and frontend
+  lint/typecheck/tests/build.
+
+External/not configured:
+- Production invitation and transactional email delivery still requires a
+  configured SES/Resend/Postmark-compatible Django email backend.
+- S3-compatible artifact storage/download still requires AWS resources and a
+  short-lived presigned URL adapter.
+- Stripe, real AI providers, Google login, Sentry, and product-specific provider
+  credentials remain intentionally unconfigured.
+
+
+2026-06-10 - Rigorous Happy and Negative Path Test Expansion
+-------------------------------------------------------------
+Changed:
+- Expanded backend tests for Google identity validation, suspended Google
+  accounts, invitation tampering/reuse/existing members, configured Stripe
+  checkout and portal calls, subscription lifecycle webhooks, usage concurrency,
+  integration failures, AI strategy/policy branches, scheduled workflow guards,
+  report retry exhaustion and artifact storage boundaries, notification
+  provider failures, and in-app notification privacy handling.
+- Expanded frontend tests for API refresh/retry and validation errors, auth
+  restore/login/register/logout, password recovery/reset, invitation acceptance,
+  reports, notifications, billing role gates, account/security, privacy deletion,
+  settings, integrations, and AI planning.
+- Added Vitest V8 coverage support and coverage thresholds. Added root backend
+  and frontend coverage commands and made release checks enforce backend and
+  frontend coverage gates.
+- Fixed Stripe webhook subscription lifecycle processing by normalizing SDK
+  `StripeObject` metadata before persisting it to Django JSON fields.
+
+Verification:
+- Backend coverage suite passed: 183 tests passed, 1 PostgreSQL-only concurrency
+  test skipped on SQLite, total backend line/branch coverage 92%.
+- Frontend lint, typecheck, and 34 Vitest tests passed.
+- Frontend V8 coverage passed: 57.12% statements, 57.94% branches, 43.50%
+  functions, and 57.16% lines.
+- Backend lint, Django check, migration drift check, OpenAPI route type drift
+  check, productization check, and frontend production build passed.
+- `npm.cmd run release:check` passed with the new backend and frontend coverage
+  gates enabled.
+
+External/not configured:
+- The real concurrent usage-reservation test requires PostgreSQL and runs only
+  when the test database vendor is PostgreSQL.
+- Playwright E2E could not run locally because the Playwright Chromium binary is
+  not installed; no application test failed before browser launch.
+- Stripe, external AI/provider APIs, production email, and AWS storage remain
+  mocked or intentionally unconfigured.
+
+
+2026-06-10 - Coverage and PostgreSQL CI Gate Remediation
+---------------------------------------------------------
+Changed:
+- Made the backend test settings use PostgreSQL when `TEST_DATABASE_URL` is
+  supplied while preserving fast in-memory SQLite as the local default.
+- Added a dedicated PostgreSQL CI job and reusable command so the concurrent
+  usage-reservation test runs against an isolated, freshly created test
+  database in a standard merge gate.
+- Changed backend and frontend CI test steps to enforce their coverage
+  thresholds.
+- Changed the deploy workflow preflight to run the complete `release:check`
+  instead of the non-coverage `check` command.
+- Updated the existing testing documentation with the PostgreSQL test gate.
+
+Verification:
+- `npm.cmd run backend:test:postgres-concurrency` passed against PostgreSQL 16:
+  the atomic usage-reservation concurrency test ran and passed without a skip.
+- `npm.cmd run release:check` passed, including 183 backend tests, the 90%
+  backend coverage gate, 34 frontend tests, frontend coverage thresholds,
+  lint, typecheck, OpenAPI/type drift checks, migration drift check, and the
+  production frontend build.
+- Backend lint, Django check, and `git diff --check` passed.
+
+External/not configured:
+- None. The CI PostgreSQL service uses isolated test-only credentials.
