@@ -14,7 +14,7 @@
 }
 
 body {
-  min-width: 320px;
+  min-width: 0;
   min-height: 100vh;
   margin: 0;
 }
@@ -385,6 +385,10 @@ h3 {
 .panel-action {
   width: fit-content;
   margin-top: 14px;
+}
+
+.integration-credential-form {
+  width: min(100%, 440px);
 }
 
 .row-actions {
@@ -1181,14 +1185,22 @@ td {
   }
 
   .sidebar {
-    flex-direction: row;
-    align-items: center;
-    overflow-x: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 18px;
+    overflow-x: hidden;
   }
 
   .sidebar nav {
     grid-auto-flow: column;
     grid-auto-columns: max-content;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .brand-row {
+    flex: 0 0 auto;
   }
 
   .workspace {

@@ -34,7 +34,8 @@ Future products should add:
 - `billing`: plans, subscriptions, Stripe checkout/customer portal/webhook
   skeleton, and safe organization entitlement projection
 - `usage`: usage records and plan-limit enforcement
-- `integrations`: provider registry, connected accounts, encrypted credentials, sync logs
+- `integrations`: safe customer-configurable provider registry, connected
+  accounts, encrypted organization credentials, BYOK resolution, and sync logs
 - `ai`: provider registry, task profiles, model policies, execution decisions, prompts,
   call logs, result cache
 - `jobs`: queued/background workflow state, attempts, retries, and errors
@@ -55,6 +56,11 @@ plan from the AI service layer, then use the returned strategy:
 
 This keeps model choice configurable per task/profile/plan while preserving a
 single audit trail for cost, fallback, and risk decisions.
+
+Organization-owned AI API keys can satisfy provider configuration for that
+organization. Product/provider clients must resolve them only in backend
+services. Platform-managed credentials remain environment/secret-manager
+configuration and must never be added to the customer integration registry.
 
 ## Background Workflow Pattern
 

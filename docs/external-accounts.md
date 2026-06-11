@@ -74,6 +74,18 @@ Current code can store API-key credentials encrypted for a connected integration
 account. OAuth connect attempts return a descriptive `503` until OAuth client
 settings and provider-specific exchange logic exist.
 
+Organization owners/admins can manage customer-owned credentials from the
+dashboard integrations page. The reusable registry currently includes OpenAI,
+Anthropic, and Gemini API-key forms plus a disabled-until-configured Slack OAuth
+entry. Stored credential values are write-only and encrypted.
+
+Do not add platform Stripe billing keys, AWS credentials, email-provider keys,
+Sentry DSNs, Django secrets, or deployment credentials through this panel. Those
+belong to the SaaS operator and must stay in environment-specific secret
+management. A future product that analyzes a customer's Stripe account should
+use a separate Stripe Connect/OAuth provider integration, not the platform
+billing secret key.
+
 ### Google Login
 
 Optional for products that want social sign-in.

@@ -21,7 +21,8 @@ Current scaffold:
 - billing skeleton with seeded plans, subscriptions, Stripe placeholders, and webhook verification
 - organization-scoped plan entitlements with safe boolean feature flags
 - usage tracking foundation with plan-limit enforcement services
-- integrations skeleton with provider registry, encrypted credentials, connected accounts, and sync logs
+- integrations foundation with a customer-managed BYOK panel, provider registry,
+  encrypted organization credentials, connected accounts, and sync logs
 - AI skeleton with provider registry, task profiles, model policies, execution planning,
   prompt templates, structured output validation, and call tracking
 - reports/jobs/notifications foundation for queued and scheduled report workflows,
@@ -170,3 +171,8 @@ Stripe, OpenAI, AWS, SES/Resend, and product-specific provider accounts are not
 required for the current backend core phase. When those phases start, follow
 [docs/external-accounts.md](docs/external-accounts.md) and keep all credentials
 out of the repository.
+
+Organization owners/admins can add supported customer-owned API keys from the
+dashboard integrations page. Platform Stripe billing keys, AWS credentials,
+email credentials, Sentry, Django secrets, and deployment secrets remain
+platform-managed and are never user-configurable.

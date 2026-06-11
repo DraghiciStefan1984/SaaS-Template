@@ -1561,3 +1561,46 @@ Verification:
 
 External/not configured:
 - None. The CI PostgreSQL service uses isolated test-only credentials.
+
+
+2026-06-11 - Customer-Managed Connections and BYOK Panel
+---------------------------------------------------------
+Changed:
+- Added a reusable dashboard panel where organization owners/admins can connect,
+  replace, and disconnect supported customer-owned API keys.
+- Seeded safe customer-configurable provider entries for OpenAI, Anthropic,
+  Gemini, and a disabled-until-configured Slack OAuth connection.
+- Added provider-declared credential fields, strict field validation, encrypted
+  write-only storage, platform-managed provider rejection, audit-backed
+  connection actions, and credential deletion on disconnect.
+- Restricted connected-account API responses to safe status summaries without
+  external identifiers, scopes, connected-user IDs, or operational metadata.
+- Fixed mobile dashboard navigation overlap by separating the brand and
+  horizontally scrollable navigation, and removed the rigid body minimum width
+  that caused page-level horizontal scrolling on 320px viewports.
+- Added organization-specific AI provider readiness using encrypted BYOK
+  credentials while preserving platform environment keys as a fallback.
+- Documented that Stripe billing, AWS, email, Sentry, Django, and deployment
+  secrets remain platform-managed and must never be entered by customers.
+
+Verification:
+- Focused integrations/AI backend suite passed: 39 tests.
+- Backend lint, Django check, migration drift check, frontend lint, and frontend
+  typecheck passed.
+- Frontend suite passed: 35 tests.
+- Local browser verification passed for owner/admin provider discovery and the
+  masked OpenAI credential form. Responsive browser checks passed at 320px,
+  375px, 768px, and desktop widths across public, auth, dashboard, settings,
+  reports, notifications, plan, and integrations views.
+- `npm.cmd run release:check` passed, including 186 backend tests, 92% backend
+  coverage, frontend coverage thresholds, OpenAPI/type drift checks, and the
+  production frontend build.
+
+External/not configured:
+- Slack remains an OAuth placeholder until a platform Slack app, client
+  credentials, redirect flow, and token exchange client are configured.
+- Real AI provider execution remains behind the existing provider-client
+  placeholder; organization keys are stored and resolved but are not sent to a
+  provider by the core template.
+- The new Playwright responsive smoke test is included for CI, but could not
+  launch locally because the Playwright Chromium binary is not installed.

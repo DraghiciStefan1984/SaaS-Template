@@ -9,6 +9,7 @@ from jsonschema import validate
 from rest_framework.exceptions import APIException, ValidationError
 
 from apps.billing.services import get_subscription_for_organization
+from apps.integrations.services import get_organization_provider_api_key
 
 from .models import (
     AICallLog,
@@ -62,10 +63,15 @@ class AIProviderNotConfigured(APIException):
     default_code = "ai_provider_not_configured"
 
 
-def provider_configuration_status(provider):
+def provider_configuration_status(provider, organization=None):
     key_setting = PROVIDER_KEY_SETTINGS.get(provider.slug)
     if not key_setting:
         return {"status": "custom_provider", "detail": "Custom provider requires a product client."}
+    if organization is not None and get_organization_provider_api_key(organization, provider.slug):
+        return {
+            "status": "configured",
+            "detail": "Organization API key is configured.",
+        }
     if not getattr(settings, key_setting, ""):
         return {
             "status": "not_configured",
@@ -74,8 +80,8 @@ def provider_configuration_status(provider):
     return {"status": "configured", "detail": "Provider API key is configured."}
 
 
-def ensure_provider_configured(provider):
-    status = provider_configuration_status(provider)
+def ensure_provider_configured(provider, organization=None):
+    status = provider_configuration_status(provider, organization)
     if status["status"] != "configured":
         raise AIProviderNotConfigured(status["detail"])
 
@@ -263,10 +269,10 @@ def default_llm_provider():
     return AIProvider.objects.filter(is_active=True).order_by("name").first()
 
 
-def execution_plan_configuration_status(strategy, provider):
+def execution_plan_configuration_status(strategy, provider, organization):
     if strategy in LLM_STRATEGIES:
         if provider is not None:
-            return provider_configuration_status(provider)
+            return provider_configuration_status(provider, organization)
         return {
             "status": "not_configured",
             "detail": "Selected LLM strategy requires an active provider, but none is available.",
@@ -371,7 +377,11 @@ def select_ai_execution_plan(
         },
         "fallback_chain": fallback_chain,
         "reason": reason,
-        "configuration": execution_plan_configuration_status(selected_strategy, provider),
+        "configuration": execution_plan_configuration_status(
+            selected_strategy,
+            provider,
+            organization,
+        ),
         "constraints": constraints,
         "input_summary": input_summary,
     }
@@ -457,7 +467,7 @@ def run_ai_prompt(
     started = time.perf_counter()
 
     try:
-        ensure_provider_configured(provider)
+        ensure_provider_configured(provider, organization)
     except AIProviderNotConfigured as exc:
         latency_ms = int((time.perf_counter() - started) * 1000)
         AICallLog.objects.create(

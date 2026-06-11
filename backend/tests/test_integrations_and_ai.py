@@ -65,7 +65,19 @@ def test_provider_registry_lists_active_providers(django_user_model):
     response = client.get("/api/v1/integrations/providers/")
 
     assert response.status_code == 200
-    assert response.json()[0]["slug"] == provider.slug
+    providers = response.json()
+    assert provider.slug in {item["slug"] for item in providers}
+    openai = next(item for item in providers if item["slug"] == "openai")
+    assert openai["credential_fields"] == [
+        {
+            "key": "api_key",
+            "label": "OpenAI API key",
+            "secret": True,
+            "required": True,
+        }
+    ]
+    assert openai["is_customer_configurable"] is True
+    assert "config" not in openai
 
 
 def test_admin_can_connect_api_key_provider_and_secret_is_encrypted(django_user_model):
@@ -122,6 +134,49 @@ def test_member_cannot_connect_integration_provider(django_user_model):
     )
 
     assert response.status_code == 403
+
+
+def test_connect_rejects_platform_managed_provider_and_unsupported_credential_fields(
+    django_user_model,
+):
+    owner = make_user(django_user_model, email="owner@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    platform_provider = IntegrationProvider.objects.create(
+        name="Platform Service",
+        slug="platform-service",
+        category="platform",
+        auth_type=ProviderAuthType.API_KEY,
+        config={"customer_configurable": False},
+    )
+    openai_provider = IntegrationProvider.objects.get(slug="openai")
+    client = APIClient()
+    client.force_authenticate(owner)
+
+    platform_response = client.post(
+        f"/api/v1/integrations/{platform_provider.slug}/connect/",
+        {
+            "organization_id": organization.id,
+            "credential_payload": {"api_key": "platform-secret"},
+        },
+        format="json",
+    )
+    unexpected_field_response = client.post(
+        f"/api/v1/integrations/{openai_provider.slug}/connect/",
+        {
+            "organization_id": organization.id,
+            "credential_payload": {
+                "api_key": "organization-secret",
+                "admin_secret": "not-allowed",
+            },
+        },
+        format="json",
+    )
+
+    assert platform_response.status_code == 400
+    assert "managed by the SaaS platform" in str(platform_response.json())
+    assert unexpected_field_response.status_code == 400
+    assert "Unsupported credential fields" in str(unexpected_field_response.json())
+    assert organization.integration_accounts.count() == 0
 
 
 @override_settings(MAX_JSON_PAYLOAD_BYTES=20)
@@ -339,6 +394,52 @@ def test_member_cannot_read_integration_sync_logs(django_user_model):
     response = client.get(f"/api/v1/integrations/{account.id}/sync-logs/")
 
     assert response.status_code == 403
+
+
+def test_member_integration_account_list_exposes_only_safe_connection_status(django_user_model):
+    owner = make_user(django_user_model, email="owner@example.com")
+    member = make_user(django_user_model, email="member@example.com")
+    organization = create_organization_for_owner(owner, "Owner Workspace")
+    Membership.objects.create(
+        organization=organization,
+        user=member,
+        role=MembershipRole.MEMBER,
+        status=MembershipStatus.ACTIVE,
+    )
+    provider = make_api_key_provider("safe-summary-provider")
+    account = organization.integration_accounts.create(
+        provider=provider,
+        external_account_id="external-private",
+        display_name="Safe Summary Provider",
+        connected_by=owner,
+        scopes=["private:scope"],
+        metadata={"private_label": "do-not-expose"},
+    )
+    IntegrationCredential.objects.create(
+        integration_account=account,
+        credential_type=CredentialType.API_KEY,
+        encrypted_payload="encrypted-test-payload",
+    )
+    client = APIClient()
+    client.force_authenticate(member)
+
+    response = client.get(f"/api/v1/integrations/accounts/?organization_id={organization.id}")
+
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert set(result) == {
+        "id",
+        "organization",
+        "provider",
+        "display_name",
+        "status",
+        "has_credential",
+        "last_sync_at",
+        "created_at",
+        "updated_at",
+    }
+    assert "external-private" not in str(result)
+    assert "do-not-expose" not in str(result)
 
 
 def test_invalid_encrypted_integration_credential_is_rejected():
@@ -690,6 +791,32 @@ def test_execution_plan_uses_low_cost_llm_for_recurring_report_narrative(django_
     assert execution_plan["provider_slug"] == "openai"
     assert execution_plan["configuration"]["status"] == "not_configured"
     assert "OPENAI_API_KEY" in execution_plan["configuration"]["detail"]
+
+
+def test_execution_plan_recognizes_encrypted_organization_ai_api_key(django_user_model):
+    owner = make_user(django_user_model, email="byok-owner@example.com")
+    organization = create_organization_for_owner(owner, "BYOK Workspace")
+    provider = IntegrationProvider.objects.get(slug="openai")
+    connect_integration_account(
+        organization=organization,
+        provider=provider,
+        connected_by=owner,
+        credential_payload={"api_key": "organization-openai-secret"},
+    )
+
+    execution_plan = select_ai_execution_plan(
+        organization=organization,
+        user=owner,
+        task_key="recurring_ai_report",
+        input_payload={"facts": {"revenue": 1000}},
+        constraints={},
+    )
+
+    assert execution_plan["configuration"] == {
+        "status": "configured",
+        "detail": "Organization API key is configured.",
+    }
+    assert "organization-openai-secret" not in str(execution_plan)
 
 
 def test_llm_execution_plan_reports_missing_required_provider(django_user_model):

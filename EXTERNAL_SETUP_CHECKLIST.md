@@ -206,6 +206,9 @@ Usage rule:
   a low-cost model.
 - Use advanced models only when the value justifies the cost and simpler methods
   are not reliable enough.
+- The SaaS operator may configure a platform key through secret management.
+- Organization owners/admins may alternatively add their own supported AI API
+  key through the dashboard integrations panel.
 
 ### Optional AI Providers
 
@@ -372,6 +375,8 @@ npm run product:scaffold:dry-run
 
 - Do not commit real `.env` files.
 - Do not commit API keys in examples.
+- Do not ask customers to enter platform Stripe billing, AWS, email, Sentry,
+  Django, or deployment secrets in the dashboard integrations panel.
 - Do not add live Stripe keys before test billing works.
 - Do not create OAuth apps for integrations that no product needs yet.
 - Do not add advanced AI calls where deterministic code or classic ML/DL is

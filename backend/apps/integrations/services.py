@@ -28,6 +28,65 @@ class IntegrationProviderNotConfigured(APIException):
     default_code = "integration_provider_not_configured"
 
 
+def provider_is_customer_configurable(provider):
+    return provider.config.get("customer_configurable", True) is True
+
+
+def provider_credential_fields(provider):
+    fields = provider.config.get("credential_fields", [])
+    if not isinstance(fields, list):
+        return []
+    return [
+        {
+            "key": field.get("key", ""),
+            "label": field.get("label", ""),
+            "secret": bool(field.get("secret", True)),
+            "required": bool(field.get("required", True)),
+        }
+        for field in fields
+        if isinstance(field, dict) and field.get("key") and field.get("label")
+    ]
+
+
+def validate_provider_credential_payload(provider, credential_payload):
+    if credential_payload is None:
+        return credential_payload
+    if not isinstance(credential_payload, dict):
+        raise ValidationError({"credential_payload": "Expected a JSON object."})
+
+    fields = provider_credential_fields(provider)
+    if not fields and provider.auth_type == ProviderAuthType.API_KEY:
+        fields = [{"key": "api_key", "required": True}]
+
+    allowed_keys = {field["key"] for field in fields}
+    unexpected_keys = sorted(set(credential_payload) - allowed_keys)
+    if unexpected_keys:
+        raise ValidationError(
+            {"credential_payload": f"Unsupported credential fields: {', '.join(unexpected_keys)}."}
+        )
+
+    missing_keys = [
+        field["key"]
+        for field in fields
+        if field.get("required") and not credential_payload.get(field["key"])
+    ]
+    if missing_keys:
+        raise ValidationError(
+            {"credential_payload": f"Missing credential fields: {', '.join(missing_keys)}."}
+        )
+
+    for key, value in credential_payload.items():
+        if not isinstance(value, str) or not value.strip():
+            raise ValidationError(
+                {"credential_payload": f"Credential field '{key}' must be a non-empty string."}
+            )
+        if len(value) > 8192:
+            raise ValidationError(
+                {"credential_payload": f"Credential field '{key}' exceeds 8192 characters."}
+            )
+    return credential_payload
+
+
 def _fernet():
     digest = hashlib.sha256(settings.INTEGRATION_CREDENTIALS_KEY.encode()).digest()
     key = base64.urlsafe_b64encode(digest)
@@ -45,6 +104,25 @@ def decrypt_credential_payload(encrypted_payload):
     except InvalidToken as exc:
         raise ValidationError("Credential payload could not be decrypted.") from exc
     return json.loads(decrypted)
+
+
+def get_organization_provider_api_key(organization, provider_slug):
+    credential = (
+        IntegrationCredential.objects.filter(
+            integration_account__organization=organization,
+            integration_account__provider__slug=provider_slug,
+            integration_account__status=IntegrationAccountStatus.CONNECTED,
+            credential_type=CredentialType.API_KEY,
+        )
+        .select_related("integration_account")
+        .order_by("-updated_at")
+        .first()
+    )
+    if credential is None:
+        return ""
+    payload = decrypt_credential_payload(credential.encrypted_payload)
+    api_key = payload.get("api_key", "") if isinstance(payload, dict) else ""
+    return api_key if isinstance(api_key, str) else ""
 
 
 def provider_health_check(provider):
@@ -90,14 +168,15 @@ def connect_integration_account(
 ):
     if not provider.is_active:
         raise ValidationError({"provider": "This provider is disabled."})
+    if not provider_is_customer_configurable(provider):
+        raise ValidationError({"provider": "This provider is managed by the SaaS platform."})
 
     metadata = metadata or {}
     if not isinstance(metadata, dict):
         raise ValidationError({"metadata": "Expected a JSON object."})
-    if credential_payload is not None and not isinstance(credential_payload, dict):
-        raise ValidationError({"credential_payload": "Expected a JSON object."})
+    validate_provider_credential_payload(provider, credential_payload)
 
-    if provider.auth_type == ProviderAuthType.OAUTH2 and not credential_payload:
+    if provider.auth_type == ProviderAuthType.OAUTH2:
         # Once a real OAuth app exists, exchange authorization codes in a provider client here.
         raise IntegrationProviderNotConfigured()
 
@@ -139,9 +218,10 @@ def reconnect_integration_account(
     provider = account.provider
     if not provider.is_active:
         raise ValidationError({"provider": "This provider is disabled."})
-    if credential_payload is not None and not isinstance(credential_payload, dict):
-        raise ValidationError({"credential_payload": "Expected a JSON object."})
-    if provider.auth_type == ProviderAuthType.OAUTH2 and not credential_payload:
+    if not provider_is_customer_configurable(provider):
+        raise ValidationError({"provider": "This provider is managed by the SaaS platform."})
+    validate_provider_credential_payload(provider, credential_payload)
+    if provider.auth_type == ProviderAuthType.OAUTH2:
         # TODO(oauth): Exchange an authorization code through the provider
         # client after OAuth client ID/secret and redirect URI are configured.
         raise IntegrationProviderNotConfigured()

@@ -365,6 +365,21 @@ export const api = {
       `/integrations/accounts/?organization_id=${organizationId}`,
       { token },
     ),
+  connectIntegration: (
+    token: string,
+    providerSlug: string,
+    payload: {
+      organization_id: number;
+      display_name?: string;
+      credential_type?: string;
+      credential_payload?: Record<string, unknown>;
+    },
+  ) =>
+    apiRequest<IntegrationAccount>(`/integrations/${providerSlug}/connect/`, {
+      method: "POST",
+      token,
+      body: payload,
+    }),
   disconnectIntegration: (token: string, accountId: number) =>
     apiRequest<{ status: string }>(`/integrations/${accountId}/disconnect/`, {
       method: "POST",

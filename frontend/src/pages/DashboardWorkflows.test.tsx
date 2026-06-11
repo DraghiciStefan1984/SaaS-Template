@@ -392,6 +392,48 @@ describe("Dashboard workflows", () => {
     await screen.findByText("detail: A pending request already exists.");
   });
 
+  it("lets an organization admin connect a customer-managed API key provider", async () => {
+    const openaiProvider = {
+      id: 10,
+      name: "OpenAI",
+      slug: "openai",
+      category: "ai",
+      auth_type: "api_key",
+      status: "available",
+      description: "Use an organization-owned OpenAI API key.",
+      credential_fields: [
+        { key: "api_key", label: "OpenAI API key", secret: true, required: true },
+      ],
+      is_customer_configurable: true,
+      health: { status: "ok", detail: "Available" },
+    };
+    vi.mocked(api.integrationProviders).mockResolvedValue([openaiProvider]);
+    vi.mocked(api.connectIntegration).mockResolvedValue({
+      id: 10,
+      organization: 1,
+      provider: openaiProvider,
+      display_name: "OpenAI",
+      status: "connected",
+      has_credential: true,
+      last_sync_at: null,
+      created_at: "2026-06-11T00:00:00Z",
+    });
+    const browserUser = userEvent.setup();
+    renderPage(<IntegrationsPage />);
+
+    await browserUser.click(await screen.findByRole("button", { name: "Connect OpenAI" }));
+    await browserUser.type(screen.getByLabelText("OpenAI API key"), "organization-secret");
+    await browserUser.click(screen.getByRole("button", { name: "Connect" }));
+
+    await screen.findByText("Integration connected");
+    expect(api.connectIntegration).toHaveBeenCalledWith("access-token", "openai", {
+      organization_id: 1,
+      display_name: "OpenAI",
+      credential_type: "api_key",
+      credential_payload: { api_key: "organization-secret" },
+    });
+  });
+
   it("enforces member role-gating in settings and integrations", async () => {
     setRole("member");
     vi.mocked(api.integrationAccounts).mockResolvedValue({
@@ -409,9 +451,13 @@ describe("Dashboard workflows", () => {
             category: "test",
             auth_type: "api_key",
             status: "active",
+            description: "Connected provider",
+            credential_fields: [
+              { key: "api_key", label: "API key", secret: true, required: true },
+            ],
+            is_customer_configurable: true,
             health: { status: "ok", detail: "Available" },
           },
-          external_account_id: "external",
           display_name: "Connected Provider",
           status: "connected",
           has_credential: true,
@@ -471,9 +517,13 @@ describe("Dashboard workflows", () => {
             category: "test",
             auth_type: "api_key",
             status: "active",
+            description: "Connected provider",
+            credential_fields: [
+              { key: "api_key", label: "API key", secret: true, required: true },
+            ],
+            is_customer_configurable: true,
             health: { status: "ok", detail: "Available" },
           },
-          external_account_id: "external",
           display_name: "Connected Provider",
           status: "connected",
           has_credential: true,

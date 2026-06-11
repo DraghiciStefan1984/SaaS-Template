@@ -112,6 +112,14 @@ export type IntegrationProvider = {
   category: string;
   auth_type: string;
   status: string;
+  description: string;
+  credential_fields: {
+    key: string;
+    label: string;
+    secret: boolean;
+    required: boolean;
+  }[];
+  is_customer_configurable: boolean;
   health: {
     status: string;
     detail: string;
@@ -122,7 +130,6 @@ export type IntegrationAccount = {
   id: number;
   organization: number;
   provider: IntegrationProvider;
-  external_account_id: string;
   display_name: string;
   status: string;
   has_credential: boolean;

@@ -37,6 +37,10 @@ lifecycle webhooks, AI policy selection and escalation guards, provider
 credential failures, scheduled workflow guards, report retry exhaustion,
 artifact storage boundaries, notification provider failures, and privacy
 handling for in-app notifications.
+Integration coverage also verifies customer-managed provider discovery,
+encrypted BYOK storage, provider-declared credential fields, platform-managed
+provider rejection, role gates, disconnect deletion, reconnect, and
+organization-specific AI provider readiness.
 
 ## Frontend
 

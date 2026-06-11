@@ -6,6 +6,12 @@ Security defaults should be conservative from the first implementation.
 
 - Never commit secrets.
 - Use encrypted storage or secure references for OAuth tokens and API keys.
+- Restrict customer-managed credential changes to organization owners/admins,
+  validate provider-declared credential fields, and never return stored values.
+- Expose connected accounts to regular members only as safe connection-status
+  summaries without external identifiers, scopes, or operational metadata.
+- Keep Stripe billing, AWS, email, observability, Django, and deployment secrets
+  platform-managed; do not expose them through customer credential forms.
 - Verify Stripe and provider webhook signatures.
 - Enforce organization-level permissions on scoped endpoints.
 - Enforce plan and usage limits server-side.

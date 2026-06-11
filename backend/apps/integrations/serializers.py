@@ -11,13 +11,18 @@ from .models import (
 )
 from .services import (
     connect_integration_account,
+    provider_credential_fields,
     provider_health_check,
+    provider_is_customer_configurable,
     reconnect_integration_account,
 )
 
 
 class IntegrationProviderSerializer(serializers.ModelSerializer):
     health = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+    credential_fields = serializers.SerializerMethodField()
+    is_customer_configurable = serializers.SerializerMethodField()
 
     class Meta:
         model = IntegrationProvider
@@ -30,6 +35,9 @@ class IntegrationProviderSerializer(serializers.ModelSerializer):
             "scopes",
             "status",
             "feature_flags",
+            "description",
+            "credential_fields",
+            "is_customer_configurable",
             "health",
             "created_at",
             "updated_at",
@@ -38,6 +46,16 @@ class IntegrationProviderSerializer(serializers.ModelSerializer):
 
     def get_health(self, obj) -> dict:
         return provider_health_check(obj)
+
+    def get_description(self, obj) -> str:
+        description = obj.config.get("description", "")
+        return description if isinstance(description, str) else ""
+
+    def get_credential_fields(self, obj) -> list[dict]:
+        return provider_credential_fields(obj)
+
+    def get_is_customer_configurable(self, obj) -> bool:
+        return provider_is_customer_configurable(obj)
 
 
 class IntegrationAccountSerializer(serializers.ModelSerializer):
@@ -50,12 +68,8 @@ class IntegrationAccountSerializer(serializers.ModelSerializer):
             "id",
             "organization",
             "provider",
-            "external_account_id",
             "display_name",
             "status",
-            "scopes",
-            "connected_by",
-            "metadata",
             "has_credential",
             "last_sync_at",
             "created_at",
