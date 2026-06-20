@@ -3,6 +3,17 @@ from .base import *  # noqa: F403
 DEBUG = False
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+EMAIL_PROVIDER = "console"
+GOOGLE_OAUTH_CLIENT_ID = ""
+STRIPE_SECRET_KEY = ""
+STRIPE_WEBHOOK_SECRET = ""
+OPENAI_API_KEY = ""
+ANTHROPIC_API_KEY = ""
+GEMINI_API_KEY = ""
+SENTRY_DSN = ""
+AWS_STORAGE_BUCKET_NAME = ""
+HEALTHCHECK_REQUIRE_REDIS = False
+INTEGRATION_CREDENTIALS_KEY = "test-only-integration-credentials-key"
 
 TEST_DATABASE_URL = env("TEST_DATABASE_URL", default="")  # noqa: F405
 if TEST_DATABASE_URL:

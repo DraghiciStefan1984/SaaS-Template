@@ -1604,3 +1604,218 @@ External/not configured:
   provider by the core template.
 - The new Playwright responsive smoke test is included for CI, but could not
   launch locally because the Playwright Chromium binary is not installed.
+
+
+2026-06-12 - Start and Pro Billing Lifecycle Remediation
+---------------------------------------------------------
+Changed:
+- Updated the independent Start and Pro editions so inactive Stripe
+  subscriptions cannot retain paid workspace quota.
+- Added order-aware Stripe lifecycle handling using the latest accepted Stripe
+  event creation time and the currently tracked subscription identifier.
+- Added local Checkout reservations that block duplicate active/pending
+  subscription attempts, reuse existing Stripe customers, and restore prior
+  local state when Stripe session creation fails.
+- Added subscription migrations for the latest accepted Stripe event timestamp.
+- Added real PostgreSQL concurrency tests and dedicated CI jobs for quota
+  reservation row-locking in both editions.
+- Updated Start and Pro Stripe/testing documentation. Free was not modified.
+
+Verification:
+- Start SQLite suite passed: 37 tests passed, 1 PostgreSQL-only test skipped.
+- Pro SQLite suite passed: 63 tests passed, 1 PostgreSQL-only test skipped.
+- Start PostgreSQL suite passed: 37 tests passed, including concurrency.
+- Pro PostgreSQL suite passed: 63 tests passed, including concurrency.
+- Start and Pro Django checks, migration drift checks, OpenAPI validation,
+  Docker Compose validation, focused Ruff checks, and `git diff --check`
+  passed.
+
+External/not configured:
+- Real Stripe accounts, products, prices, secrets, and webhook endpoints remain
+  intentionally unconfigured. Automated tests use mocks.
+
+
+2026-06-12 - Start and Pro Checkout Completion Safety
+------------------------------------------------------
+Changed:
+- Added pending Stripe Checkout Session identifiers and expiration timestamps
+  to Start and Pro subscriptions.
+- Added safe handling for expired and delayed-payment Checkout events.
+- Abandoned Checkout reservations are released by the matching signed
+  `checkout.session.expired` event.
+- A later Checkout attempt can reconcile an elapsed pending session with Stripe
+  and releases it only when Stripe confirms that it is expired.
+- Checkout completion now grants paid access only when `payment_status=paid`;
+  unpaid Checkout completion remains incomplete with fallback quota.
+- Added tests for expired-session retry, stale expiration events, safe local
+  reconciliation, unpaid completion, and async payment success.
+
+Verification:
+- Start SQLite suite passed: 44 tests passed, 1 PostgreSQL-only test skipped.
+- Pro SQLite suite passed: 70 tests passed, 1 PostgreSQL-only test skipped.
+- Start PostgreSQL suite passed: 44 tests, including concurrency.
+- Pro PostgreSQL suite passed: 70 tests, including concurrency.
+- Start and Pro Django checks, migration drift checks, OpenAPI validation,
+  Docker Compose validation, focused Ruff checks, and `git diff --check`
+  passed.
+
+External/not configured:
+- Real Stripe lifecycle verification still requires a Stripe test-mode account,
+  test Products/Prices, webhook signing secret, and Stripe CLI or hosted
+  webhook endpoint.
+
+
+2026-06-12 - Stripe Equal-Timestamp and Checkout-Race Remediation
+-----------------------------------------------------------------
+Changed:
+- Added a unique pending Checkout attempt ID before every Stripe Checkout
+  provider call in Start and Pro.
+- Sent the attempt ID in Checkout Session and Subscription metadata and require
+  matching metadata before Checkout webhooks can mutate an active reservation.
+- Prevented delayed webhooks from older Checkout attempts from clearing a new
+  reservation while its Stripe Session ID is not yet available.
+- Added fail-closed handling for Stripe lifecycle events created in the same
+  second: restrictive transitions remain accepted, while equal-timestamp
+  events cannot escalate a non-paid subscription back to paid access.
+- Added migrations and focused regression tests for both race conditions.
+
+Verification:
+- Start SQLite suite passed: 46 tests passed, 1 PostgreSQL-only test skipped.
+- Pro SQLite suite passed: 72 tests passed, 1 PostgreSQL-only test skipped.
+- Start PostgreSQL suite passed: 46 tests, including concurrency.
+- Pro PostgreSQL suite passed: 72 tests, including concurrency.
+- Start and Pro Django checks, migration drift checks, OpenAPI validation,
+  focused Ruff checks, and `git diff --check` passed.
+
+External/not configured:
+- Real Stripe lifecycle verification still requires Stripe test-mode
+  credentials and signed webhook delivery.
+
+
+2026-06-13 - Documentation Consolidation
+------------------------------------------
+Changed:
+- Reduced active project documentation from 70 documents to 22.
+- Kept the root, backend, and frontend AGENTS instructions plus the active
+  architecture, API, security, testing, product, deployment, and Codex workflow
+  documents required by the repository rules.
+- Consolidated operational setup, validation, Stripe, AI, usage, jobs, and
+  deployment instructions for Free, Start, and Pro into each edition README.
+- Removed historical DOCX specifications, the completed edition audit, outdated
+  component README placeholders, redundant deployment/external-account notes,
+  and edition micro-documents.
+
+Verification:
+- Confirmed that no runtime, CI, test, or configuration file references the
+  removed documents.
+- Confirmed that no local Markdown links remain broken.
+
+
+2026-06-14 - Dependency And Environment Manifest Alignment
+-----------------------------------------------------------
+Changed:
+- Added Gunicorn to the Start runtime manifest for its documented basic
+  production deployment path.
+- Declared the Django integration extra for Sentry in the Pro runtime manifest.
+- Added optional PostgreSQL concurrency-test and DRF throttle variables to the
+  main backend environment example.
+
+Verification:
+- Confirmed that current third-party imports are represented by the appropriate
+  Free, Start, Pro, or main-backend dependency manifest.
+- Confirmed that external APIs which remain intentionally unimplemented are
+  isolated behind safe placeholders/service boundaries.
+
+
+2026-06-14 - Local AI Provider Configuration And Gemini Adapter Fix
+--------------------------------------------------------------------
+Changed:
+- Configured supported AI provider credentials only in Git-ignored local
+  environment files; no provider secrets were added to tracked files.
+- Kept the Google GenAI client alive for the complete Gemini request in Start
+  and Pro instead of constructing it as a temporary chained expression.
+- Isolated all automated test settings from local Stripe, AI, Sentry, Google,
+  AWS, email, and integration credentials so tests cannot make real provider
+  calls or change behavior based on a developer's `.env`.
+- Isolated the main automated test settings from the local Redis readiness
+  requirement so tests remain deterministic when Redis is not running.
+
+Verification:
+- Django loaded OpenAI, Anthropic, Gemini, and OpenRouter configuration without
+  exposing credentials.
+- OpenAI live smoke test passed.
+- Gemini live smoke test passed after the client-lifetime fix.
+- Anthropic reached the provider but requires account credit before requests
+  can succeed.
+- Free, Start, and Pro full test suites passed.
+- Main release check passed, including 186 backend tests, 91.70% backend
+  coverage, frontend checks, coverage, and production build.
+
+
+2026-06-13 - Commercial Edition AI-Ready Alignment
+--------------------------------------------------
+Changed:
+- Aligned Free with the updated AI-ready specification by adding a minimal
+  reusable AI core, OpenAI adapter, mock provider, model allowlist, safe
+  missing-key behavior, Swagger endpoints, and mocked provider tests.
+- Aligned Start with the multi-provider MVP specification by adding native
+  OpenAI, Anthropic, and Gemini adapters, Perplexity/OpenAI-compatible support,
+  a server-side provider/model catalog, configurable defaults, request logs,
+  and basic AI usage accounting.
+- Extended Pro with the Start provider catalog, encrypted organization BYOK
+  resolution, platform-key precedence, plan-based provider/model rules, prompt
+  versions, structured output validation, AI budgets, retries/fallback,
+  customer API key/report/workflow attribution, cost summaries, and AI-backed
+  reports. Organization BYOK credentials can now also be explicitly deleted.
+- Added required per-edition API, environment, security, AI setup, model
+  selection, module, changelog, and license-placeholder documentation.
+- Updated Docker Compose environment handling for the supported AI providers.
+
+Verification:
+- Free Django checks, migration drift, OpenAPI validation, Ruff, and all 17
+  tests passed.
+- Start Django checks, migration drift, OpenAPI validation, Ruff, and all 60
+  SQLite tests passed; the PostgreSQL-only concurrency test was skipped in the
+  SQLite suite as designed.
+- Pro Django checks, migration drift, OpenAPI validation, Ruff, and all 89
+  SQLite tests passed; the PostgreSQL-only concurrency test was skipped in the
+  SQLite suite as designed.
+- Start and Pro Docker Compose configuration validation passed.
+- Start and Pro backend Docker images built successfully with the complete
+  declared provider dependency sets.
+- Start full PostgreSQL suite passed: 60 tests, including concurrency.
+- Pro full PostgreSQL suite passed: 89 tests, including concurrency.
+
+External/not configured:
+- Real provider smoke tests remain opt-in and require customer-owned OpenAI,
+  Anthropic, Gemini, Perplexity, or compatible-provider API keys.
+- Stripe, email delivery, Sentry, and AWS remain optional external setup.
+- The final public/commercial license texts require a business/legal decision.
+
+
+2026-06-12 - Stripe Terminal-State and Production-Secret Remediation
+--------------------------------------------------------------------
+Changed:
+- Made canceled subscriptions terminal for delayed Checkout and subscription
+  update events in Start and Pro. A new lifecycle begins only through an
+  explicit new Checkout reservation.
+- Extended pending Checkout attempt validation to `customer.subscription.*`
+  events, preventing old same-second restrictive events from clearing a new
+  reservation before its Stripe Session ID is stored.
+- Strengthened production settings so public `.env.example` placeholders,
+  common development placeholders, short keys, and low-diversity secret keys
+  are rejected.
+- Added regression tests for async events after cancellation, old subscription
+  events during new Checkout creation, and production settings imports.
+
+Verification:
+- Start SQLite suite passed: 50 tests passed, 1 PostgreSQL-only test skipped.
+- Pro SQLite suite passed: 76 tests passed, 1 PostgreSQL-only test skipped.
+- Start PostgreSQL suite passed: 50 tests, including concurrency.
+- Pro PostgreSQL suite passed: 76 tests, including concurrency.
+- Start and Pro Django checks, migration drift checks, OpenAPI validation,
+  focused Ruff checks, and `git diff --check` passed.
+
+External/not configured:
+- Real Stripe lifecycle verification still requires Stripe test-mode
+  credentials and signed webhook delivery.

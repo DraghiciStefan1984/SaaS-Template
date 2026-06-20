@@ -169,8 +169,8 @@ npm run api:types:check
 
 Stripe, OpenAI, AWS, SES/Resend, and product-specific provider accounts are not
 required for the current backend core phase. When those phases start, follow
-[docs/external-accounts.md](docs/external-accounts.md) and keep all credentials
-out of the repository.
+[EXTERNAL_SETUP_CHECKLIST.md](EXTERNAL_SETUP_CHECKLIST.md) and keep all
+credentials out of the repository.
 
 Organization owners/admins can add supported customer-owned API keys from the
 dashboard integrations page. Platform Stripe billing keys, AWS credentials,

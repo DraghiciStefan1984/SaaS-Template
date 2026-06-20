@@ -47,8 +47,8 @@ PostgreSQL/Redis, platform secrets, and public port configuration; run the same
 checks and Docker images where supported. Do not treat the Replit filesystem as
 durable storage and do not replace the AWS production baseline with it.
 
-See `docs/external-accounts.md` before connecting Stripe, OpenAI, AWS, SES, or
-any product-specific provider API.
+See `../EXTERNAL_SETUP_CHECKLIST.md` before connecting Stripe, OpenAI, AWS, SES,
+or any product-specific provider API.
 
 ## Deployment Rule
 
